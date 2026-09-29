@@ -1,132 +1,105 @@
-import { useState } from "react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import React from 'react';
+import Link from 'next/link';
 
-const initialUsers = [
-  { id: 1, name: "Alice Johnson", email: "alice@kmitl.ac.th", role: "Admin", status: "Active", tier: "Pro" },
-  { id: 2, name: "Bob Smith", email: "bob@kmitl.ac.th", role: "Member", status: "Active", tier: "Free" },
-  { id: 3, name: "Charlie Davis", email: "charlie@kmitl.ac.th", role: "Member", status: "Inactive", tier: "Free" },
-  { id: 4, name: "Diana Prince", email: "diana@kmitl.ac.th", role: "Member", status: "Active", tier: "Pro" },
-];
-
-export default function AdminDashboard() {
-  const [users, setUsers] = useState(initialUsers);
-
-  const handleToggleRole = (id) => {
-    setUsers(users.map(user => 
-      user.id === id ? { ...user, role: user.role === "Admin" ? "Member" : "Admin" } : user
-    ));
-  };
-
-  const handleDeleteUser = (id) => {
-    setUsers(users.filter(user => user.id !== id));
-  };
-
+export default function AdminAnalytics() {
   return (
-    <div className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background">
-        <div className="container flex h-16 items-center justify-between px-4">
-          <span className="text-xl font-bold tracking-tight text-primary">Admin Panel</span>
-          <div className="flex items-center gap-4">
-            <Link href="/products"><Button variant="ghost">Workspace</Button></Link>
-            <Link href="/"><Button variant="outline">Exit Dashboard</Button></Link>
-          </div>
+    <div className="min-h-screen bg-[#F8F9FA] text-gray-900 flex flex-col">
+      {/* Header Bar */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <Link href="/" className="font-bold text-sm sm:text-base text-gray-900 hover:text-[#E57338] transition">
+            ← Back to Home
+          </Link>
+          <span className="text-xs sm:text-sm font-semibold text-[#E57338]">Admin Analytics</span>
         </div>
       </header>
 
-      <main className="container py-8 space-y-8">
+      {/* Responsive Main Container */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Analytics & Management</h1>
-          <p className="text-muted-foreground mt-1">Monitor business KPIs and manage system accounts.</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Analytics Overview</h1>
+          <p className="text-xs sm:text-sm text-gray-500 mt-0.5">Campus operational performance & recovery metrics</p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Total Users</CardDescription>
-              <CardTitle className="text-3xl">{users.length}</CardTitle>
-            </CardHeader>
-            <CardContent><p className="text-xs text-muted-foreground">+12% from last month</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Pro Subscribers</CardDescription>
-              <CardTitle className="text-3xl">{users.filter(u => u.tier === "Pro").length}</CardTitle>
-            </CardHeader>
-            <CardContent><p className="text-xs text-emerald-600 font-medium">50% conversion rate</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Monthly Revenue</CardDescription>
-              <CardTitle className="text-3xl">$19.98</CardTitle>
-            </CardHeader>
-            <CardContent><p className="text-xs text-muted-foreground">Based on $9.99/mo Pro tier</p></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Items Recovered</CardDescription>
-              <CardTitle className="text-3xl">142</CardTitle>
-            </CardHeader>
-            <CardContent><p className="text-xs text-blue-600 font-medium">89% resolution rate</p></CardContent>
-          </Card>
+        {/* 4-Column Stat Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
+            <span className="text-xs text-gray-400 font-medium">Recovery Rate</span>
+            <p className="text-xl sm:text-3xl font-extrabold text-gray-900 mt-1">47.6%</p>
+          </div>
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
+            <span className="text-xs text-gray-400 font-medium">Avg. Match Time</span>
+            <p className="text-xl sm:text-3xl font-extrabold text-gray-900 mt-1">2.3 Days</p>
+          </div>
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
+            <span className="text-xs text-gray-400 font-medium">MRR</span>
+            <p className="text-xl sm:text-3xl font-extrabold text-gray-900 mt-1">฿48,200</p>
+          </div>
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
+            <span className="text-xs text-gray-400 font-medium">Active Users</span>
+            <p className="text-xl sm:text-3xl font-extrabold text-gray-900 mt-1">1,284</p>
+          </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>User Management</CardTitle>
-            <CardDescription>View user accounts, change privileges, or remove access.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b bg-muted/50 text-xs uppercase text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">Role</th>
-                    <th className="px-4 py-3">Tier</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-muted/20">
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{user.name}</div>
-                        <div className="text-xs text-muted-foreground">{user.email}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          user.role === 'Admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
-                        }`}>{user.role}</span>
-                      </td>
-                      <td className="px-4 py-3 font-medium">{user.tier}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${
-                          user.status === 'Active' ? 'text-emerald-600' : 'text-gray-400'
-                        }`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-600' : 'bg-gray-400'}`} />
-                          {user.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right space-x-2">
-                        <Button size="sm" variant="outline" onClick={() => handleToggleRole(user.id)}>Toggle Role</Button>
-                        <Button size="sm" variant="destructive" onClick={() => handleDeleteUser(user.id)}>Delete</Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Charts & Graphs Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Bar Chart */}
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-6">
+              Items by Category
+            </h3>
+            <div className="flex items-end gap-4 h-48 pt-4 border-b border-gray-100 pb-2">
+              <div className="flex-1 bg-[#E57338] rounded-t-md h-full relative group flex items-end justify-center">
+                <span className="absolute -bottom-6 text-xs text-gray-500 font-medium">Electronics</span>
+              </div>
+              <div className="flex-1 bg-[#E57338] rounded-t-md h-[65%] relative group flex items-end justify-center">
+                <span className="absolute -bottom-6 text-xs text-gray-500 font-medium">Bags</span>
+              </div>
+              <div className="flex-1 bg-[#E57338] rounded-t-md h-[45%] relative group flex items-end justify-center">
+                <span className="absolute -bottom-6 text-xs text-gray-500 font-medium">Documents</span>
+              </div>
+              <div className="flex-1 bg-[#E57338] rounded-t-md h-[30%] relative group flex items-end justify-center">
+                <span className="absolute -bottom-6 text-xs text-gray-500 font-medium">Apparel</span>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+
+          {/* Location Progress Bars */}
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
+            <h3 className="text-xs sm:text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
+              Lost / Found Activity by Location
+            </h3>
+            <div className="space-y-4 text-xs sm:text-sm">
+              <div>
+                <div className="flex justify-between font-medium text-gray-700 mb-1.5">
+                  <span>Main Library</span>
+                  <span className="text-gray-400">75%</span>
+                </div>
+                <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-[#D9534F] w-[75%] rounded-full"></div>
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between font-medium text-gray-700 mb-1.5">
+                  <span>Student Cafeteria</span>
+                  <span className="text-gray-400">50%</span>
+                </div>
+                <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-[#48A868] w-[50%] rounded-full"></div>
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between font-medium text-gray-700 mb-1.5">
+                  <span>Engineering Building</span>
+                  <span className="text-gray-400">35%</span>
+                </div>
+                <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-[#48A868] w-[35%] rounded-full"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
   );
