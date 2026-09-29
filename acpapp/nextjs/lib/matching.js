@@ -7,7 +7,11 @@ const ALIAS_MAP = {
   ecc: ['engineering', 'e12', 'telecom'],
   engineering: ['ecc', 'e12', 'eng'],
   library: ['central library', 'kmitl library', 'office of the library'],
-  canteen: ['cafeteria', 'food court'],
+  canteen: ['cafeteria', 'food court', 'canteen a'],
+  'canteen a': ['canteen', 'cafeteria', 'food court'],
+  hm: ['hm building', 'praomklao', 'hm building kmitl'],
+  'hm building': ['hm', 'praomklao'],
+  '7-11': ['seven eleven', 'convenience store', '711', 'seven'],
 };
 
 const STOP_WORDS = new Set([
