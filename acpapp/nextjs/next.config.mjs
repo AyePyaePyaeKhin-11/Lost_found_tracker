@@ -4,6 +4,11 @@ const API_URL = "http://backend-api:8000";
 
 const nextConfig = {
   reactStrictMode: true,
+  // output: 'export',
+  reactStrictMode: true,
+  images: {
+    unoptimized: true,
+  },
   async rewrites() {
     return [
       {
