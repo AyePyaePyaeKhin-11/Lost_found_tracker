@@ -6,12 +6,14 @@ from database import connect_db, disconnect_db, setup_db
 from routes.auth import router as auth_router
 from routes.items import router as items_router
 from routes.products import router as products_router #the router has to be registered in app.py or you'll get 404 on every /api/products call.
+from routes.billing import router as billing_router, setup_billing_tables
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
     await setup_db()
+    await setup_billing_tables()
     yield
     await disconnect_db()
 
@@ -20,6 +22,7 @@ app = FastAPI(title="ACP App API", lifespan=lifespan)
 app.include_router(auth_router, prefix="/api")
 app.include_router(items_router, prefix="/api")
 app.include_router(products_router, prefix="/api")
+app.include_router(billing_router, prefix="/api")
 
 
 @app.get("/")
