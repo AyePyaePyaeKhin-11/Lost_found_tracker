@@ -1,15 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { authFetch } from '../lib/api';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const TOKEN_KEY = 'token'; // change if login.js stores it under another key
-
-function authHeaders() {
-  const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
-  return token
-    ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
-    : { 'Content-Type': 'application/json' };
-}
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export default function Pricing() {
   const [showQrModal, setShowQrModal] = useState(false);
@@ -21,7 +14,7 @@ export default function Pricing() {
 
   async function loadStatus() {
     try {
-      const res = await fetch(`${API}/api/billing/status`, { headers: authHeaders() });
+      const res = await authFetch('/api/billing/status');
       if (res.ok) setStatus(await res.json());
       else setStatus(null);
     } catch {
@@ -38,13 +31,12 @@ export default function Pricing() {
     setPaid(false);
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/billing/checkout`, {
+      const res = await authFetch('/api/billing/checkout', {
         method: 'POST',
-        headers: authHeaders(),
+        headers: JSON_HEADERS,
         body: JSON.stringify({ plan: 'enterprise' }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.status === 401) throw new Error('Please log in first.');
       if (res.status === 403) throw new Error('Only organization admins can upgrade the plan.');
       if (!res.ok) throw new Error(data.detail || 'Could not start checkout.');
       setCheckout(data);
@@ -60,9 +52,9 @@ export default function Pricing() {
     setMessage(null);
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/billing/webhook`, {
+      const res = await authFetch('/api/billing/webhook', {
         method: 'POST',
-        headers: authHeaders(),
+        headers: JSON_HEADERS,
         body: JSON.stringify({ reference: checkout.reference }),
       });
       const data = await res.json().catch(() => ({}));
