@@ -1,4 +1,5 @@
 import { calculateMatchScore } from '../../../lib/matching';
+import { fetchItemsFromBackend } from '../../../lib/backend';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -6,40 +7,30 @@ export default async function handler(req, res) {
   }
 
   try {
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
-    const backendRes = await fetch(`${backendUrl}/api/items`);
+    // Forwards the caller's token; sends the 401/error response itself if it fails.
+    const items = await fetchItemsFromBackend(req, res);
+    if (items === null) return;
 
-    if (!backendRes.ok) {
-      const errorText = await backendRes.text();
-      return res.status(backendRes.status).json({
-        error: `Backend returned status ${backendRes.status}`,
-        details: errorText,
-      });
-    }
-
-    const items = await backendRes.json();
-
-    // 1. กรองเฉพาะรายการที่ยังคงเปิดเคสอยู่ (status === 'open')
+    // 1. Only cases that are still open
     const lostItems = items.filter((item) => item.type === 'lost' && item.status === 'open');
     const foundItems = items.filter((item) => item.type === 'found' && item.status === 'open');
 
-    const MATCH_THRESHOLD = 20; // ปรับ Threshold ตามความเหมาะสม (เช่น 20%)
-    const MAX_CANDIDATES = 5;    // จำกัดให้คืนค่าสูงสุด 5 รายการต่อกลุ่ม
+    // Minimum score (%). 30 = a candidate needs more than a same-day date plus a
+    // location alias (that alone can reach ~27); lower it if you want looser matches.
+    const MATCH_THRESHOLD = 30;
+    const MAX_CANDIDATES = 5; // top candidates returned per lost item
 
     const groupedMatches = lostItems.map((lostItem) => {
       const matches = foundItems
-        .map((foundItem) => {
-          const score = calculateMatchScore(lostItem, foundItem);
-          return {
-            ...foundItem,
-            match_score: score,
-          };
-        })
-        // 2. กรองเฉพาะรายการที่คะแนนถึงเกณฑ์ Threshold
-        .filter((item) => item.match_score >= MATCH_THRESHOLD) 
+        .map((foundItem) => ({
+          ...foundItem,
+          match_score: calculateMatchScore(lostItem, foundItem),
+        }))
+        // 2. Keep only candidates at or above the threshold
+        .filter((item) => item.match_score >= MATCH_THRESHOLD)
         .sort((a, b) => b.match_score - a.match_score)
-        // 3. ตัดเอาเฉพาะ Top 5 รายการแรก
-        .slice(0, MAX_CANDIDATES); 
+        // 3. Top 5 only
+        .slice(0, MAX_CANDIDATES);
 
       return {
         target_item: lostItem,

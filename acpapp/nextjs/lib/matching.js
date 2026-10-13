@@ -1,5 +1,3 @@
-// acpapp/nextjs/lib/matching.js
-
 const ALIAS_MAP = {
   apple: ['iphone', 'macbook', 'ipad', 'airpods'],
   iphone: ['apple', 'mobile', 'phone', 'smartphone'],
@@ -15,7 +13,7 @@ const ALIAS_MAP = {
 };
 
 const STOP_WORDS = new Set([
-  'a', 'an', 'the', 'and', 'or', 'in', 'on', 'at', 'with', 'by', 
+  'a', 'an', 'the', 'and', 'or', 'in', 'on', 'at', 'with', 'by',
   'for', 'of', 'to', 'near', 'found', 'lost', 'item', 'my', 'is'
 ]);
 
@@ -36,50 +34,63 @@ function isTokenMatch(tokenA, tokenB) {
 
 function calculateJaccardSimilarity(tokensA, tokensB) {
   if (!tokensA || !tokensB || tokensA.length === 0 || tokensB.length === 0) return 0.0;
-  
-  const setA = new Set(tokensA);
-  const setB = new Set(tokensB);
-  
-  let intersection = 0;
-  for (const token of setA) {
-    if (setB.has(token)) intersection++;
-  }
-  
-  const union = new Set([...setA, ...setB]).size;
+
+  const listA = [...new Set(tokensA)];
+  const listB = [...new Set(tokensB)];
+
+  const matchedA = listA.filter((a) => listB.some((b) => isTokenMatch(a, b))).length;
+  const matchedB = listB.filter((b) => listA.some((a) => isTokenMatch(a, b))).length;
+
+  const intersection = Math.min(matchedA, matchedB);
+  const union = listA.length + listB.length - intersection;
   return union === 0 ? 0.0 : intersection / union;
 }
 
 export function calculateMatchScore(itemA, itemB) {
   let score = 0.0;
 
-  // 1. Category Match (30%) - Exact String Match
-  const catA = (itemA.category || "").trim().toLowerCase();
-  const catB = (itemB.category || "").trim().toLowerCase();
-  if (catA && catB && catA === catB) {
-    score += 30.0;
-  }
-
-  // 2. Text & Keyword Similarity (30%) - Name & Description
+  // 1. Text & Keyword Similarity (40%) - Name & Title Priority
   const textA = `${itemA.name || itemA.title || ""} ${itemA.description || ""}`;
   const textB = `${itemB.name || itemB.title || ""} ${itemB.description || ""}`;
   const tokensTextA = tokenizeText(textA);
   const tokensTextB = tokenizeText(textB);
-  score += calculateJaccardSimilarity(tokensTextA, tokensTextB) * 30.0;
+  const textSimilarity = calculateJaccardSimilarity(tokensTextA, tokensTextB);
 
-  // 3. Location Proximity (25%) - Building & Area Parsing
+  // 🚫 STRICT CHECK: ถ้าชื่อสินค้าไม่มีความเกี่ยวข้องกันเลย (เช่น Mouse vs Laptop) 
+  // ให้ปรับลดน้ำหนักคะแนน Category และจำกัดคะแนนรวมไม่ให้สูงเกินไป
+  const nameA = tokenizeText(itemA.name || itemA.title || "");
+  const nameB = tokenizeText(itemB.name || itemB.title || "");
+  const nameSimilarity = calculateJaccardSimilarity(nameA, nameB);
+
+  // 2. Category Match (25%)
+  const catA = (itemA.category || "").trim().toLowerCase();
+  const catB = (itemB.category || "").trim().toLowerCase();
+  if (catA && catB && catA === catB) {
+    // ถ้าหมวดหมู่ตรงกัน แต่ชื่อสินค้าไม่มีความเชื่อมโยงกันเลย จะได้คะแนนหมวดหมู่เพียงครึ่งเดียว
+    score += (nameSimilarity === 0 && textSimilarity === 0) ? 10.0 : 25.0;
+  }
+
+  // บวกคะแนน Text Similarity (40%)
+  score += textSimilarity * 40.0;
+
+  // 3. Location Proximity (20%)
   const tokensLocA = tokenizeText(itemA.location || "");
   const tokensLocB = tokenizeText(itemB.location || "");
-  score += calculateJaccardSimilarity(tokensLocA, tokensLocB) * 25.0;
+  score += calculateJaccardSimilarity(tokensLocA, tokensLocB) * 20.0;
 
-  // 4. Date Delta Decay (15%) - Elapsed Days Proximity
+  // 4. Date Delta Decay (15%)
   const dateAVal = itemA.date_reported || itemA.date;
   const dateBVal = itemB.date_reported || itemB.date;
   if (dateAVal && dateBVal) {
     const dateA = new Date(dateAVal);
     const dateB = new Date(dateBVal);
     const diffDays = Math.abs((dateA - dateB) / (1000 * 60 * 60 * 24));
-    // Exponential Decay: ยิ่งห่างวัน คะแนนยิ่งลด
     score += 15.0 * Math.exp(-0.1 * diffDays);
+  }
+
+  // 🔒 HARD CAP: ถ้าชื่อสินค้า (Name) ไม่มีความเกี่ยวข้องกันเลย ล็อคคะแนนรวมไม่เกิน 35%
+  if (nameSimilarity === 0 && textSimilarity < 0.2) {
+    score = Math.min(score, 35.0);
   }
 
   return Math.round(score * 100) / 100;

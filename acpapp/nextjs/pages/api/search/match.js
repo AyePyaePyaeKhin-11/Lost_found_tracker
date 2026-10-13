@@ -1,4 +1,5 @@
 import { calculateMatchScore } from '../../../lib/matching';
+import { fetchItemsFromBackend } from '../../../lib/backend';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -8,43 +9,36 @@ export default async function handler(req, res) {
   try {
     const { q = '', category = '', location = '' } = req.query;
 
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
-    const backendRes = await fetch(`${backendUrl}/api/items`);
+    // Forwards the caller's token; sends the 401/error response itself if it fails.
+    const items = await fetchItemsFromBackend(req, res);
+    if (items === null) return;
 
-    if (!backendRes.ok) {
-      // ดึงรายละเอียด Error จริงจาก Backend ออกมาดู
-      const errorText = await backendRes.text();
-      return res.status(backendRes.status).json({ 
-        error: `Backend returned status ${backendRes.status}`,
-        details: errorText
-      });
-    }
-
-    const items = await backendRes.json();
-
+    // NOTE: no date_reported here on purpose. The date term of the score only
+    // applies when BOTH items have a date, so a keyword search is ranked on
+    // text / category / location only (otherwise every recent item got 15%).
     const queryTarget = {
       name: q,
       title: q,
       description: q,
       category: category,
       location: location,
-      date_reported: new Date().toISOString(),
     };
 
-    const scoredItems = items.map((item) => {
-      const score = calculateMatchScore(queryTarget, item);
-      return {
+    const results = items
+      // Only active cases: skip claimed and archived (deleted) items
+      .filter((item) => item.status === 'open')
+      .map((item) => ({
         ...item,
-        match_score: score,
-      };
-    });
-
-    scoredItems.sort((a, b) => b.match_score - a.match_score);
+        match_score: calculateMatchScore(queryTarget, item),
+      }))
+      // Skip items that match nothing at all
+      .filter((item) => item.match_score > 0)
+      .sort((a, b) => b.match_score - a.match_score);
 
     return res.status(200).json({
       query: q,
-      total_results: scoredItems.length,
-      results: scoredItems,
+      total_results: results.length,
+      results,
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });
