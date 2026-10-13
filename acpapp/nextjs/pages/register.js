@@ -48,6 +48,7 @@ export default function Register() {
       const data = await response.json();
       localStorage.setItem("token", data.token);
       localStorage.setItem("email", data.email);
+      localStorage.setItem("role", data.role);
       router.push("/products");
     } catch (err) {
       setError(err.message);
