@@ -1,24 +1,44 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { QRCodeSVG } from 'qrcode.react';
-import { authFetch } from '../lib/api';
+import { authFetch, getToken } from '../lib/api';
+
+/*
+ * Pricing & checkout - per-user plans.
+ *   free  -> can upgrade to Pro (mock PromptPay QR checkout)
+ *   pro   -> can cancel (back to Free immediately)
+ *   admin -> can't subscribe; manages users from the Admin dashboard
+ * Visitors who aren't signed in can see the plans and are sent to /login to upgrade.
+ */
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
+const DEFAULT_PRO_PRICE = 99;
+
+function Check({ color }) {
+  return <span className={`font-bold ${color}`}>✓</span>;
+}
 
 export default function Pricing() {
+  const [status, setStatus] = useState(null); // {email, role, plan, is_admin, pro_price}
+  const [signedIn, setSignedIn] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
-  const [status, setStatus] = useState(null);
   const [checkout, setCheckout] = useState(null);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   async function loadStatus() {
+    if (!getToken()) {
+      setSignedIn(false);
+      setStatus(null);
+      return;
+    }
+    setSignedIn(true);
     try {
       const res = await authFetch('/api/billing/status');
-      if (res.ok) setStatus(await res.json());
-      else setStatus(null);
+      setStatus(res.ok ? await res.json() : null);
     } catch {
       setStatus(null);
     }
@@ -28,7 +48,15 @@ export default function Pricing() {
     loadStatus();
   }, []);
 
+  const price = status?.pro_price ?? DEFAULT_PRO_PRICE;
+  const isAdmin = !!status?.is_admin;
+  const plan = status?.plan; // 'free' | 'pro' | null (admin)
+
   async function startCheckout() {
+    if (!signedIn) {
+      window.location.href = '/login';
+      return;
+    }
     setMessage(null);
     setPaid(false);
     setLoading(true);
@@ -36,10 +64,9 @@ export default function Pricing() {
       const res = await authFetch('/api/billing/checkout', {
         method: 'POST',
         headers: JSON_HEADERS,
-        body: JSON.stringify({ plan: 'enterprise' }),
+        body: JSON.stringify({ plan: 'pro' }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.status === 403) throw new Error('Only organization admins can upgrade the plan.');
       if (!res.ok) throw new Error(data.detail || 'Could not start checkout.');
       setCheckout(data);
       setShowQrModal(true);
@@ -64,7 +91,7 @@ export default function Pricing() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'Payment confirmation failed.');
       setPaid(true);
-      setMessage({ type: 'success', text: 'Payment confirmed! Your organization is now on Enterprise.' });
+      setMessage({ type: 'success', text: 'Payment confirmed! Your account is now on Pro.' });
       await loadStatus();
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
@@ -74,13 +101,94 @@ export default function Pricing() {
     }
   }
 
+  async function cancelSubscription() {
+    setMessage(null);
+    setLoading(true);
+    try {
+      const res = await authFetch('/api/billing/cancel', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Could not cancel the subscription.');
+      setMessage({ type: 'success', text: 'Your Pro subscription has been cancelled. You are now on Free.' });
+      setConfirmCancel(false);
+      await loadStatus();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function closeModal() {
     setShowQrModal(false);
     setCheckout(null);
     setPaid(false);
   }
 
-  const isEnterprise = status && status.tier === 'enterprise';
+  /* ---------------------------------------------------------- buttons */
+
+  let freeButton;
+  let proButton;
+  if (isAdmin) {
+    freeButton = proButton = (
+      <button disabled className="w-full py-3 border border-gray-200 text-gray-500 font-semibold rounded-xl bg-white text-sm cursor-default">
+        Not available for admin accounts
+      </button>
+    );
+  } else if (plan === 'pro') {
+    freeButton = (
+      <button disabled className="w-full py-3 border border-gray-200 text-gray-500 font-semibold rounded-xl bg-white text-sm cursor-default">
+        Included in Pro
+      </button>
+    );
+    proButton = confirmCancel ? (
+      <div className="space-y-2">
+        <p className="text-xs text-gray-600 text-center">Cancel Pro? You'll move to Free right away.</p>
+        <div className="flex gap-2">
+          <button
+            onClick={cancelSubscription}
+            disabled={loading}
+            className="flex-1 py-3 bg-[#D9534F] hover:bg-[#c64541] disabled:opacity-60 text-white font-semibold rounded-xl text-sm"
+          >
+            {loading ? 'Cancelling...' : 'Yes, cancel'}
+          </button>
+          <button
+            onClick={() => setConfirmCancel(false)}
+            disabled={loading}
+            className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            Keep Pro
+          </button>
+        </div>
+      </div>
+    ) : (
+      <div className="space-y-2">
+        <button disabled className="w-full py-3 bg-[#E57338] text-white font-semibold rounded-xl text-sm opacity-70 cursor-default">
+          Current Plan
+        </button>
+        <button
+          onClick={() => setConfirmCancel(true)}
+          className="w-full py-2 text-sm text-gray-500 hover:text-[#D9534F] transition"
+        >
+          Cancel subscription
+        </button>
+      </div>
+    );
+  } else {
+    freeButton = (
+      <button disabled className="w-full py-3 border border-gray-200 text-gray-800 font-semibold rounded-xl bg-white text-sm opacity-70 cursor-default">
+        {signedIn ? 'Current Plan' : 'Free forever'}
+      </button>
+    );
+    proButton = (
+      <button
+        onClick={startCheckout}
+        disabled={loading}
+        className="w-full py-3.5 bg-[#E57338] hover:bg-[#d66126] disabled:opacity-60 text-white font-semibold rounded-xl transition duration-150 shadow-sm text-sm"
+      >
+        {!signedIn ? 'Log in to upgrade' : loading ? 'Please wait...' : 'Upgrade to Pro'}
+      </button>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-gray-900 flex flex-col">
@@ -96,19 +204,31 @@ export default function Pricing() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
         <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-12">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
-            Plans for Every Department
+            Find your things faster
           </h1>
           <p className="text-sm text-gray-500 mt-2">
-            Choose a plan to manage campus lost and found operations with institutional verification.
+            Free for every KMITL student. Upgrade to Pro for smart match suggestions.
           </p>
           {status && (
             <p className="text-xs text-gray-500 mt-3">
-              {status.organization} · current plan:{' '}
-              <span className="font-semibold capitalize">{status.tier}</span> · your role:{' '}
-              <span className="font-semibold">{status.role}</span>
+              {status.email} · {isAdmin ? (
+                <span className="font-semibold">admin account</span>
+              ) : (
+                <>current plan: <span className="font-semibold capitalize">{plan}</span></>
+              )}
             </p>
           )}
         </div>
+
+        {isAdmin && (
+          <div className="max-w-4xl mx-auto mb-6 rounded-xl px-4 py-3 text-sm bg-orange-50 text-gray-700 border border-orange-200">
+            Admin accounts don't subscribe. To grant or remove Pro, or deactivate accounts, use{' '}
+            <Link href="/admin" className="font-semibold text-[#E57338] hover:underline">
+              User management in the Admin dashboard
+            </Link>
+            .
+          </div>
+        )}
 
         {message && !showQrModal && (
           <div
@@ -126,27 +246,16 @@ export default function Pricing() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 max-w-4xl mx-auto">
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Standard</h2>
-              <p className="text-xs sm:text-sm text-gray-500 mb-4">Single department or small campus</p>
-              <div className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6">Free</div>
+              <h2 className="text-lg font-bold text-gray-900">Free</h2>
+              <p className="text-xs sm:text-sm text-gray-500 mb-4">For every student and staff member</p>
+              <div className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6">฿0</div>
               <ul className="space-y-3 text-xs sm:text-sm text-gray-600 mb-8">
-                <li className="flex items-center gap-2">
-                  <span className="text-[#48A868] font-bold">✓</span> Up to 500 active listings / month
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-[#48A868] font-bold">✓</span> Campus ID verification
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-[#48A868] font-bold">✓</span> Keyword search and grouping
-                </li>
+                <li className="flex items-center gap-2"><Check color="text-[#48A868]" /> Report lost and found items</li>
+                <li className="flex items-center gap-2"><Check color="text-[#48A868]" /> Search and filter the campus log</li>
+                <li className="flex items-center gap-2"><Check color="text-[#48A868]" /> Track your own reports</li>
               </ul>
             </div>
-            <button
-              disabled
-              className="w-full py-3 border border-gray-200 text-gray-800 font-semibold rounded-xl bg-white text-sm opacity-70 cursor-default"
-            >
-              {isEnterprise ? 'Included' : 'Current Plan'}
-            </button>
+            {freeButton}
           </div>
 
           <div className="bg-white p-6 sm:p-8 rounded-2xl border-2 border-[#E57338] shadow-sm relative flex flex-col justify-between">
@@ -154,30 +263,18 @@ export default function Pricing() {
               Recommended
             </span>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Enterprise</h2>
-              <p className="text-xs sm:text-sm text-gray-500 mb-4">Multi-campus universities</p>
+              <h2 className="text-lg font-bold text-gray-900">Pro</h2>
+              <p className="text-xs sm:text-sm text-gray-500 mb-4">For people who want their item back fast</p>
               <div className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6">
-                ฿4,800<span className="text-sm font-medium text-gray-500"> / month</span>
+                ฿{price}<span className="text-sm font-medium text-gray-500"> / month</span>
               </div>
               <ul className="space-y-3 text-xs sm:text-sm text-gray-600 mb-8">
-                <li className="flex items-center gap-2">
-                  <span className="text-[#E57338] font-bold">✓</span> Unlimited active listings
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-[#E57338] font-bold">✓</span> Full institutional SSO integration
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="text-[#E57338] font-bold">✓</span> Score matching, analytics, SLA support
-                </li>
+                <li className="flex items-center gap-2"><Check color="text-[#E57338]" /> Everything in Free</li>
+                <li className="flex items-center gap-2"><Check color="text-[#E57338]" /> Smart match suggestions with confidence scores</li>
+                <li className="flex items-center gap-2"><Check color="text-[#E57338]" /> Cancel anytime</li>
               </ul>
             </div>
-            <button
-              onClick={startCheckout}
-              disabled={loading || isEnterprise}
-              className="w-full py-3.5 bg-[#E57338] hover:bg-[#d66126] disabled:opacity-60 disabled:cursor-default text-white font-semibold rounded-xl transition duration-150 shadow-sm text-sm"
-            >
-              {isEnterprise ? 'Current Plan' : loading ? 'Please wait...' : 'Upgrade Now'}
-            </button>
+            {proButton}
           </div>
         </div>
       </main>
@@ -196,7 +293,7 @@ export default function Pricing() {
             </div>
 
             <p className="text-sm font-semibold text-gray-900">
-              ฿{Number(checkout.amount).toLocaleString()}
+              ฿{Number(checkout.amount).toLocaleString()} / month
             </p>
             <p className="text-xs text-gray-400 mt-1">
               {paid

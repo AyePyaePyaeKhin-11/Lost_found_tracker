@@ -24,6 +24,16 @@ export default function Register() {
     event.preventDefault();
     setError("");
 
+    if (!email.trim().toLowerCase().endsWith("@kmitl.ac.th")) {
+      setError("Please use your KMITL email (@kmitl.ac.th)");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -63,7 +73,7 @@ export default function Register() {
         <CardHeader>
           <CardTitle>Create an account</CardTitle>
           <CardDescription>
-            Register to start shopping at the ACP Simple Store.
+            Register with your KMITL email (@kmitl.ac.th) to report and find lost items.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -78,6 +88,7 @@ export default function Register() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 autoComplete="email"
+                placeholder="you@kmitl.ac.th"
                 required
               />
             </div>

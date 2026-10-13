@@ -2,17 +2,20 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 
 /*
- * Admin Analytics Dashboard (Package 2 - Agga Paing)
+ * Admin Analytics Dashboard + User management (Package 2 - Agga Paing)
  *
- * Loads live data from GET /api/admin/analytics (admin-only).
- * Auth: reads the JWT from localStorage under the key "token".
- * Until the real login page stores the token there, this page shows a
- * small admin sign-in box that calls POST /api/login itself.
+ *   GET  /api/admin/analytics                     KPIs and charts
+ *   GET  /api/admin/users                         account list
+ *   PATCH /api/admin/users/{email}                grant/remove Pro, deactivate/reactivate
+ *   POST /api/admin/users/deactivate-inactive     clean up inactive accounts
+ *   DELETE /api/admin/users/{email}               delete accounts with no history
  *
- * API base URL: NEXT_PUBLIC_API_URL, defaulting to http://localhost:8000
+ * Auth: the JWT saved by the login page in localStorage under "token".
+ * Requests use relative /api/... URLs, which Next.js forwards to FastAPI
+ * (see next.config.mjs), so this works on any host.
  */
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API = '';
 const TOKEN_KEY = 'token';
 
 const ORANGE = '#E57338';
@@ -27,13 +30,33 @@ function readToken() {
   }
 }
 
-function saveToken(value) {
+function clearSession() {
   try {
-    if (value) window.localStorage.setItem(TOKEN_KEY, value);
-    else window.localStorage.removeItem(TOKEN_KEY);
+    ['token', 'email', 'role'].forEach((k) => window.localStorage.removeItem(k));
   } catch {
-    /* storage blocked: token only lives for this page view */
+    /* storage blocked */
   }
+}
+
+function readEmail() {
+  try {
+    return window.localStorage.getItem('email');
+  } catch {
+    return null;
+  }
+}
+
+function goToLogin() {
+  window.location.href = '/login';
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 60) return `${days} days ago`;
+  return `${Math.floor(days / 30)} months ago`;
 }
 
 function formatBaht(n) {
@@ -46,7 +69,7 @@ function shortDate(iso) {
 
 /* ------------------------------------------------------------ small parts */
 
-function Header({ onSignOut }) {
+function Header({ onSignOut, email }) {
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -55,6 +78,7 @@ function Header({ onSignOut }) {
         </Link>
         <div className="flex items-center gap-4">
           <span className="text-sm font-medium text-[#E57338]">Admin Analytics</span>
+          {email && <span className="hidden sm:inline text-sm text-gray-400">{email}</span>}
           {onSignOut && (
             <button onClick={onSignOut} className="text-sm text-gray-500 hover:text-gray-900 transition">
               Sign out
@@ -221,74 +245,291 @@ function RecentActivity({ rows }) {
   );
 }
 
-/* ----------------------------------------------------------- sign-in box */
+/* ------------------------------------------------------- user management */
 
-function AdminSignIn({ message, onSignedIn }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+function PlanBadge({ role }) {
+  const styles = {
+    admin: 'bg-gray-900 text-white',
+    pro: 'bg-[#E57338] text-white',
+    free: 'bg-gray-100 text-gray-700',
+  };
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${styles[role] || styles.free}`}>
+      {role}
+    </span>
+  );
+}
 
-  async function submit(e) {
-    e.preventDefault();
-    setError('');
-    if (!email || !password) {
-      setError('Enter your email and password.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await fetch(`${API}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+function ActionButton({ children, onClick, disabled, tone = 'default' }) {
+  const tones = {
+    default: 'border-gray-200 text-gray-700 hover:border-[#E57338] hover:text-[#E57338]',
+    danger: 'border-red-200 text-[#D9534F] hover:bg-red-50',
+    primary: 'border-[#E57338] text-[#E57338] hover:bg-orange-50',
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`px-2.5 py-1 text-xs font-semibold border rounded-lg transition disabled:opacity-50 whitespace-nowrap ${tones[tone]}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function UserManagement({ token, myEmail, onChanged }) {
+  const [users, setUsers] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [busyEmail, setBusyEmail] = useState(null);
+  const [notice, setNotice] = useState(null); // {type, text}
+  const [cleanupDays, setCleanupDays] = useState(90);
+  const [preview, setPreview] = useState(null); // {count, emails}
+  const [cleaning, setCleaning] = useState(false);
+
+  const call = useCallback(
+    async (path, options = {}) => {
+      const res = await fetch(`${API}${path}`, {
+        ...options,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        },
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.token) {
-        setError(body.detail && typeof body.detail === 'string' ? body.detail : 'Incorrect email or password.');
-        return;
+      if (res.status === 401) {
+        clearSession();
+        goToLogin();
+        throw new Error('Session expired');
       }
-      onSignedIn(body.token);
-    } catch {
-      setError("Can't reach the server. Is the backend running?");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : `Error ${res.status}`);
+      return body;
+    },
+    [token]
+  );
+
+  const loadUsers = useCallback(async () => {
+    const params = new URLSearchParams({ status: filter });
+    if (search.trim()) params.set('search', search.trim());
+    try {
+      setUsers(await call(`/api/admin/users?${params}`));
+    } catch (err) {
+      setNotice({ type: 'error', text: err.message });
+    }
+  }, [call, filter, search]);
+
+  useEffect(() => {
+    const t = setTimeout(loadUsers, 250); // small debounce for the search box
+    return () => clearTimeout(t);
+  }, [loadUsers]);
+
+  async function act(email, label, request) {
+    setBusyEmail(email);
+    setNotice(null);
+    try {
+      await request();
+      setNotice({ type: 'success', text: `${label}: ${email}` });
+      await loadUsers();
+      onChanged();
+    } catch (err) {
+      setNotice({ type: 'error', text: err.message });
     } finally {
-      setBusy(false);
+      setBusyEmail(null);
+    }
+  }
+
+  const patch = (email, body) =>
+    call(`/api/admin/users/${encodeURIComponent(email)}`, { method: 'PATCH', body: JSON.stringify(body) });
+
+  function setPlan(u, plan) {
+    act(u.email, plan === 'pro' ? 'Pro granted' : 'Pro removed', () => patch(u.email, { plan }));
+  }
+
+  function setActive(u, isActive) {
+    if (!isActive && !window.confirm(`Deactivate ${u.email}? They will be signed out and can't log in.`)) return;
+    act(u.email, isActive ? 'Reactivated' : 'Deactivated', () => patch(u.email, { is_active: isActive }));
+  }
+
+  function remove(u) {
+    if (!window.confirm(`Permanently delete ${u.email}? This can't be undone.`)) return;
+    act(u.email, 'Deleted', () => call(`/api/admin/users/${encodeURIComponent(u.email)}`, { method: 'DELETE' }));
+  }
+
+  async function previewCleanup() {
+    setNotice(null);
+    setCleaning(true);
+    try {
+      setPreview(
+        await call('/api/admin/users/deactivate-inactive', {
+          method: 'POST',
+          body: JSON.stringify({ days: cleanupDays, dry_run: true }),
+        })
+      );
+    } catch (err) {
+      setNotice({ type: 'error', text: err.message });
+    } finally {
+      setCleaning(false);
+    }
+  }
+
+  async function runCleanup() {
+    setCleaning(true);
+    try {
+      const done = await call('/api/admin/users/deactivate-inactive', {
+        method: 'POST',
+        body: JSON.stringify({ days: cleanupDays }),
+      });
+      setNotice({ type: 'success', text: `Deactivated ${done.count} inactive account${done.count === 1 ? '' : 's'}.` });
+      setPreview(null);
+      await loadUsers();
+      onChanged();
+    } catch (err) {
+      setNotice({ type: 'error', text: err.message });
+    } finally {
+      setCleaning(false);
     }
   }
 
   return (
-    <div className="flex-1 flex items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-sm bg-white border border-gray-200 rounded-2xl p-6 space-y-4">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Admin sign-in</h1>
-          <p className="text-sm text-gray-500 mt-1">{message || 'Analytics are available to administrators only.'}</p>
+    <Card title="User Management">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by email"
+          className="flex-1 px-3 py-2 text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#E57338]"
+        />
+        <div className="flex bg-white border border-gray-200 rounded-xl p-1 self-start">
+          {['all', 'active', 'deactivated'].map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 text-sm rounded-lg capitalize transition ${
+                filter === f ? 'bg-[#E57338] text-white font-semibold' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              {f}
+            </button>
+          ))}
         </div>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@kmitl.ac.th"
-          autoComplete="username"
-          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#E57338]"
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          autoComplete="current-password"
-          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#E57338]"
-        />
-        {error && <p className="text-sm text-[#D9534F]">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full py-3 bg-[#E57338] hover:bg-[#d66126] disabled:opacity-60 text-white font-semibold rounded-xl transition"
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-gray-50 rounded-xl text-sm">
+        <span className="text-gray-600">Deactivate accounts inactive for</span>
+        <select
+          value={cleanupDays}
+          onChange={(e) => {
+            setCleanupDays(Number(e.target.value));
+            setPreview(null);
+          }}
+          className="px-2 py-1 bg-white border border-gray-200 rounded-lg"
         >
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
-    </div>
+          {[30, 90, 180, 365].map((d) => (
+            <option key={d} value={d}>
+              {d} days
+            </option>
+          ))}
+        </select>
+        {!preview ? (
+          <ActionButton onClick={previewCleanup} disabled={cleaning}>
+            {cleaning ? 'Checking…' : 'Find inactive accounts'}
+          </ActionButton>
+        ) : preview.count === 0 ? (
+          <span className="text-gray-500">No accounts inactive for {preview.days}+ days.</span>
+        ) : (
+          <>
+            <span className="text-gray-700">
+              {preview.count} account{preview.count === 1 ? '' : 's'}: {preview.emails.slice(0, 3).join(', ')}
+              {preview.count > 3 ? ` +${preview.count - 3} more` : ''}
+            </span>
+            <ActionButton tone="danger" onClick={runCleanup} disabled={cleaning}>
+              {cleaning ? 'Deactivating…' : `Deactivate ${preview.count}`}
+            </ActionButton>
+            <ActionButton onClick={() => setPreview(null)} disabled={cleaning}>
+              Cancel
+            </ActionButton>
+          </>
+        )}
+      </div>
+
+      {notice && (
+        <p className={`text-sm mb-3 ${notice.type === 'error' ? 'text-[#D9534F]' : 'text-[#4E9F6E]'}`}>{notice.text}</p>
+      )}
+
+      {users === null ? (
+        <Empty>Loading users…</Empty>
+      ) : users.length === 0 ? (
+        <Empty>No users match.</Empty>
+      ) : (
+        <div className="overflow-x-auto -mx-5 px-5">
+          <table className="w-full text-sm min-w-[720px]">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                <th className="py-2 pr-3 font-medium">Email</th>
+                <th className="py-2 pr-3 font-medium">Plan</th>
+                <th className="py-2 pr-3 font-medium">Status</th>
+                <th className="py-2 pr-3 font-medium">Last active</th>
+                <th className="py-2 pr-3 font-medium">Reports</th>
+                <th className="py-2 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {users.map((u) => {
+                const locked = u.role === 'admin' || u.email === myEmail;
+                const busy = busyEmail === u.email;
+                return (
+                  <tr key={u.email} className={u.is_active ? '' : 'text-gray-400'}>
+                    <td className="py-2.5 pr-3 max-w-[220px] truncate" title={u.email}>
+                      {u.email}
+                      {u.email === myEmail && <span className="text-xs text-gray-400"> (you)</span>}
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      <PlanBadge role={u.role} />
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      {u.is_active ? (
+                        <span className="text-[#4E9F6E] font-medium">Active</span>
+                      ) : (
+                        <span className="text-gray-400 font-medium">Deactivated</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-3 whitespace-nowrap">{timeAgo(u.last_active_at)}</td>
+                    <td className="py-2.5 pr-3">{u.items_reported}</td>
+                    <td className="py-2.5">
+                      {locked ? (
+                        <span className="block text-right text-xs text-gray-400">—</span>
+                      ) : (
+                        <div className="flex justify-end gap-1.5">
+                          {u.role === 'pro' ? (
+                            <ActionButton onClick={() => setPlan(u, 'free')} disabled={busy}>Remove Pro</ActionButton>
+                          ) : (
+                            <ActionButton tone="primary" onClick={() => setPlan(u, 'pro')} disabled={busy || !u.is_active}>
+                              Grant Pro
+                            </ActionButton>
+                          )}
+                          {u.is_active ? (
+                            <ActionButton tone="danger" onClick={() => setActive(u, false)} disabled={busy}>Deactivate</ActionButton>
+                          ) : (
+                            <ActionButton onClick={() => setActive(u, true)} disabled={busy}>Reactivate</ActionButton>
+                          )}
+                          {u.can_delete && (
+                            <ActionButton tone="danger" onClick={() => remove(u)} disabled={busy}>Delete</ActionButton>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-gray-400 mt-3">
+        Accounts with reports or payments can't be deleted, only deactivated, so item history and revenue stay accurate.
+      </p>
+    </Card>
   );
 }
 
@@ -298,6 +539,7 @@ const RANGES = [7, 30, 90];
 
 export default function AdminAnalytics() {
   const [token, setToken] = useState(null);
+  const [myEmail, setMyEmail] = useState(null);
   const [ready, setReady] = useState(false);
   const [days, setDays] = useState(30);
   const [data, setData] = useState(null);
@@ -305,7 +547,13 @@ export default function AdminAnalytics() {
   const [errorText, setErrorText] = useState('');
 
   useEffect(() => {
-    setToken(readToken());
+    const t = readToken();
+    if (!t) {
+      goToLogin();
+      return;
+    }
+    setToken(t);
+    setMyEmail(readEmail());
     setReady(true);
   }, []);
 
@@ -317,9 +565,8 @@ export default function AdminAnalytics() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.status === 401) {
-        saveToken(null);
-        setToken(null);
-        setStatus('expired');
+        clearSession();
+        goToLogin();
         return;
       }
       if (res.status === 403) {
@@ -343,35 +590,19 @@ export default function AdminAnalytics() {
     load();
   }, [load]);
 
-  function signIn(newToken) {
-    saveToken(newToken);
-    setToken(newToken);
-  }
-
   function signOut() {
-    saveToken(null);
-    setToken(null);
-    setData(null);
-    setStatus('idle');
+    clearSession();
+    goToLogin();
   }
 
   const shell = (content, showSignOut = false) => (
     <div className="min-h-screen bg-[#F8F9FA] text-gray-900 flex flex-col">
-      <Header onSignOut={showSignOut ? signOut : null} />
+      <Header onSignOut={showSignOut ? signOut : null} email={showSignOut ? myEmail : null} />
       {content}
     </div>
   );
 
   if (!ready) return shell(null);
-
-  if (!token) {
-    return shell(
-      <AdminSignIn
-        message={status === 'expired' ? 'Your session expired. Please sign in again.' : ''}
-        onSignedIn={signIn}
-      />
-    );
-  }
 
   if (status === 'forbidden') {
     return shell(
@@ -474,12 +705,12 @@ export default function AdminAnalytics() {
         <StatCard label="Open Found" value={summary.open_found} />
         <StatCard label="Total Reports" value={nonArchived} sub={`${summary.total_lost} lost · ${summary.total_found} found`} />
         <StatCard
-          label="Users by Role"
-          value={users.users_by_role ? Object.keys(users.users_by_role).length : '—'}
+          label="Pro Subscribers"
+          value={billing ? billing.pro_users : '—'}
           sub={
-            users.users_by_role
-              ? Object.entries(users.users_by_role).map(([role, n]) => `${role} ${n}`).join(' · ')
-              : 'Roles not available'
+            billing
+              ? `${billing.conversion_rate}% of users · ${billing.cancellations_30d} cancelled (30d)`
+              : 'Billing not connected yet'
           }
         />
       </div>
@@ -507,6 +738,8 @@ export default function AdminAnalytics() {
           <RecentActivity rows={recent_activity} />
         </Card>
       </div>
+
+      <UserManagement token={token} myEmail={myEmail} onChanged={load} />
     </main>,
     true
   );

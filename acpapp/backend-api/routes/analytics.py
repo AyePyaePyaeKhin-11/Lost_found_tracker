@@ -19,10 +19,14 @@ Metric definitions (keep these in the design document, section 7):
                          route sets updated_at = NOW() and claimed items
                          can no longer be edited, so updated_at is the
                          claim time.
-    active_users_30d     distinct users who reported an item in the last
-                         30 days (the users table has no last-login column)
-    billing              MRR, ARR, paid transactions; None until the
-                         transactions table from the billing work exists
+    active_users_30d     active (not deactivated) accounts that logged in or
+                         reported an item in the last 30 days
+    mrr                  current Pro subscribers x PRO_PRICE (per-user monthly
+                         plan), so a cancellation lowers MRR immediately
+    arr                  mrr x 12
+    conversion_rate      pro / (free + pro) * 100, admins excluded
+    cancellations_30d    Pro subscriptions cancelled or revoked in 30 days
+    transaction_volume   total THB of paid checkout transactions
 """
 
 import logging
@@ -33,6 +37,7 @@ from pydantic import BaseModel
 
 from database import database
 from deps import require_role
+from routes.billing import PRO_PRICE
 
 logger = logging.getLogger(__name__)
 
@@ -87,12 +92,17 @@ class ActivityEntry(BaseModel):
 class UserStats(BaseModel):
     total_users: int
     active_users_30d: int
+    deactivated_users: int
     users_by_role: Optional[dict[str, int]]  # None if users has no role column
 
 
 class BillingStats(BaseModel):
     mrr: float
     arr: float
+    pro_users: int
+    free_users: int
+    conversion_rate: float          # percentage, 0-100
+    cancellations_30d: int
     paid_transactions: int
     transaction_volume: float
 
@@ -243,9 +253,15 @@ async def user_stats(org_id: int) -> UserStats:
         """
         SELECT
             (SELECT COUNT(*) FROM users WHERE organization_id = :org_id) AS total_users,
-            (SELECT COUNT(DISTINCT reported_by) FROM items
-              WHERE organization_id = :org_id
-                AND date_reported >= NOW() - INTERVAL '30 days')           AS active_users
+            (SELECT COUNT(*) FROM users
+              WHERE organization_id = :org_id AND NOT is_active)          AS deactivated_users,
+            (SELECT COUNT(*) FROM users u
+              WHERE u.organization_id = :org_id AND u.is_active
+                AND (u.last_login_at >= NOW() - INTERVAL '30 days'
+                     OR EXISTS (SELECT 1 FROM items i
+                                 WHERE i.reported_by = u.email
+                                   AND i.date_reported >= NOW() - INTERVAL '30 days'))
+            )                                                             AS active_users
         """,
         {"org_id": org_id},
     )
@@ -265,51 +281,74 @@ async def user_stats(org_id: int) -> UserStats:
     return UserStats(
         total_users=row["total_users"],
         active_users_30d=row["active_users"],
+        deactivated_users=row["deactivated_users"],
         users_by_role=by_role,
     )
 
 
 async def billing_stats(org_id: int) -> Optional[BillingStats]:
-    """MRR / ARR / transaction volume from the billing transactions table.
+    """Subscription revenue for the admin's organization.
 
-    ASSUMED CONTRACT - agree it with Aye before she creates the table:
-        transactions(
-            id, user_email -> users(email), organization_id -> organizations(id),
-            plan VARCHAR, amount NUMERIC (THB), status VARCHAR ('pending'|'paid'|'failed'),
-            created_at TIMESTAMPTZ
-        )
-    MRR = sum of paid amounts in the last 30 days (monthly subscriptions).
-    Returns None if the table doesn't exist yet, so the endpoint keeps
-    working before billing is merged.
+    Plans are per user (users.role = 'free' | 'pro'), so MRR is the number of
+    users currently on Pro times PRO_PRICE. Payments come from the
+    transactions table, cancellations from subscription_events (both created
+    by routes/billing.py). Returns None if the billing tables don't exist yet.
     """
-    exists = await database.fetch_one("SELECT to_regclass('public.transactions') IS NOT NULL AS ok")
-    if not exists["ok"]:
+    tables = await database.fetch_one(
+        """
+        SELECT to_regclass('public.transactions') IS NOT NULL        AS has_txn,
+               to_regclass('public.subscription_events') IS NOT NULL AS has_events
+        """
+    )
+    if not tables["has_txn"]:
         return None
     try:
-        row = await database.fetch_one(
+        plans = await database.fetch_one(
             """
-            SELECT
-                COALESCE(SUM(amount) FILTER (
-                    WHERE created_at >= NOW() - INTERVAL '30 days'), 0) AS mrr,
-                COUNT(*)                                                AS paid_count,
-                COALESCE(SUM(amount), 0)                                AS volume
+            SELECT COUNT(*) FILTER (WHERE role = 'pro')  AS pro_users,
+                   COUNT(*) FILTER (WHERE role = 'free') AS free_users
+            FROM users
+            WHERE organization_id = :org_id AND is_active
+            """,
+            {"org_id": org_id},
+        )
+        payments = await database.fetch_one(
+            """
+            SELECT COUNT(*)                 AS paid_count,
+                   COALESCE(SUM(amount), 0) AS volume
             FROM transactions
             WHERE organization_id = :org_id AND status = 'paid'
             """,
             {"org_id": org_id},
         )
+        cancellations = 0
+        if tables["has_events"]:
+            ev = await database.fetch_one(
+                """
+                SELECT COUNT(*) AS n FROM subscription_events
+                WHERE organization_id = :org_id
+                  AND event IN ('cancelled', 'revoked')
+                  AND created_at >= NOW() - INTERVAL '30 days'
+                """,
+                {"org_id": org_id},
+            )
+            cancellations = ev["n"]
     except Exception:
-        # Column names differ from the contract above. Don't take the whole
-        # dashboard down; log it and fix the query to match the real table.
-        logger.exception("billing_stats: transactions table doesn't match expected columns")
+        # Don't take the whole dashboard down if a billing table differs.
+        logger.exception("billing_stats: billing tables don't match the expected columns")
         return None
 
-    mrr = float(row["mrr"])
+    pro, free = plans["pro_users"], plans["free_users"]
+    mrr = float(pro * PRO_PRICE)
     return BillingStats(
         mrr=round(mrr, 2),
         arr=round(mrr * 12, 2),
-        paid_transactions=row["paid_count"],
-        transaction_volume=round(float(row["volume"]), 2),
+        pro_users=pro,
+        free_users=free,
+        conversion_rate=round(pro / (pro + free) * 100, 1) if (pro + free) else 0.0,
+        cancellations_30d=cancellations,
+        paid_transactions=payments["paid_count"],
+        transaction_volume=round(float(payments["volume"]), 2),
     )
 
 

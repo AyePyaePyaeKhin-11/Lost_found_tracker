@@ -29,7 +29,7 @@ export default function Login() {
       }
 
       saveSession(data); // stores token, email, role in localStorage
-      router.push('/products');
+      router.push(data.role === 'admin' ? '/admin' : '/products');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -53,7 +53,7 @@ export default function Login() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:border-[#E57338]"
-              placeholder="you@example.com"
+              placeholder="you@kmitl.ac.th"
               autoComplete="email"
               required
             />

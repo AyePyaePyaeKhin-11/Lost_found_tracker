@@ -75,6 +75,20 @@ async def setup_db():
     )
     await database.execute("ALTER TABLE users ALTER COLUMN organization_id SET NOT NULL")
 
+    # Per-user plans: the role column holds the RBAC role / plan
+    # ('admin', 'free' or 'pro'). Older databases used 'student' for
+    # ordinary users, which is the same thing as 'free'.
+    await database.execute("ALTER TABLE users ALTER COLUMN role SET DEFAULT 'free'")
+    await database.execute("UPDATE users SET role = 'free' WHERE role = 'student'")
+    # Admin user management: deactivated accounts can't log in, and
+    # last_login_at lets the admin find inactive accounts.
+    await database.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE"
+    )
+    await database.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ"
+    )
+
     await database.execute(
         """
         CREATE TABLE IF NOT EXISTS items (
@@ -128,7 +142,7 @@ async def setup_db():
 
 async def get_user_by_email(email: str):
     return await database.fetch_one(
-        "SELECT email, password, token, create_at FROM users WHERE email = :email",
+        "SELECT email, password, token, create_at, is_active FROM users WHERE email = :email",
         {"email": email},
     )
 

@@ -67,13 +67,14 @@ def run_sql(*statements):
 async def _seed():
     database = Database(DB_URL)
     await database.connect()
-    for t in ("transactions", "items", "users", "organizations"):
+    for t in ("subscription_events", "transactions", "items", "users", "organizations"):
         await database.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
     await database.execute("CREATE TABLE organizations (id SERIAL PRIMARY KEY, slug TEXT UNIQUE)")
     await database.execute("INSERT INTO organizations (slug) VALUES ('kmitl'), ('other')")
     await database.execute("""
         CREATE TABLE users (email VARCHAR(255) PRIMARY KEY, password TEXT,
-            organization_id INTEGER NOT NULL REFERENCES organizations(id), role VARCHAR(10))""")
+            organization_id INTEGER NOT NULL REFERENCES organizations(id), role VARCHAR(10),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE, last_login_at TIMESTAMPTZ)""")
     await database.execute("""
         CREATE TABLE items (
             item_id UUID PRIMARY KEY,
@@ -90,7 +91,8 @@ async def _seed():
     users = [("admin@kmitl.ac.th", 1, "admin"), ("a@kmitl.ac.th", 1, "free"),
              ("b@kmitl.ac.th", 1, "pro"), ("x@other.ac.th", 2, "free")]
     for email, org, role in users:
-        await database.execute("INSERT INTO users VALUES (:e, 'x', :o, :r)",
+        await database.execute("INSERT INTO users (email, password, organization_id, role) "
+                               "VALUES (:e, 'x', :o, :r)",
                                {"e": email, "o": org, "r": role})
 
     # (type, name, category, location, status, reported_days_ago, claimed_after_days, reporter, org)
@@ -187,7 +189,8 @@ def test_recent_activity_newest_first(client):
 def test_users(client):
     u = get(client).json()["users"]
     assert u["total_users"] == 3
-    assert u["active_users_30d"] == 3
+    assert u["active_users_30d"] == 3          # all three reported an item in 30 days
+    assert u["deactivated_users"] == 0
     assert u["users_by_role"] == {"admin": 1, "free": 1, "pro": 1}
 
 
@@ -196,17 +199,22 @@ def test_billing_none_until_transactions_table_exists(client):
 
 
 def test_billing_once_table_exists(client):
+    # Same shape as routes/billing.py's transactions table.
     run_sql(("""
         CREATE TABLE transactions (id SERIAL PRIMARY KEY, user_email VARCHAR(255),
-            organization_id INTEGER, plan VARCHAR(20), amount NUMERIC,
-            status VARCHAR(10), created_at TIMESTAMPTZ DEFAULT NOW())""",), ("""
-        INSERT INTO transactions (user_email, organization_id, plan, amount, status, created_at) VALUES
+            organization_id INTEGER, tier VARCHAR(20), amount NUMERIC,
+            status VARCHAR(10), reference VARCHAR(40), created_at TIMESTAMPTZ DEFAULT NOW())""",), ("""
+        INSERT INTO transactions (user_email, organization_id, tier, amount, status, created_at) VALUES
         ('b@kmitl.ac.th', 1, 'pro', 199, 'paid',    NOW()),
         ('b@kmitl.ac.th', 1, 'pro', 199, 'paid',    NOW() - INTERVAL '45 days'),
         ('a@kmitl.ac.th', 1, 'pro', 199, 'pending', NOW()),
         ('x@other.ac.th', 2, 'pro', 999, 'paid',    NOW())""",))
     b = get(client).json()["billing"]
-    assert b == {"mrr": 199.0, "arr": 2388.0, "paid_transactions": 2, "transaction_volume": 398.0}
+    # MRR follows who is on Pro now (b), not past payments: 1 x PRO_PRICE (99).
+    # Org 1 non-admins: a (free), b (pro) -> 50% conversion.
+    assert b == {"mrr": 99.0, "arr": 1188.0, "pro_users": 1, "free_users": 1,
+                 "conversion_rate": 50.0, "cancellations_30d": 0,
+                 "paid_transactions": 2, "transaction_volume": 398.0}
 
 
 def test_invalid_params_rejected(client):
