@@ -40,14 +40,11 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="w-12 h-12 bg-[#E57338] rounded-2xl mb-8"></div>
 
-        {/* Header */}
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Lost and Found Tracker</h1>
         <p className="text-sm text-gray-500 mt-1 mb-8">Sign in to report and search items</p>
 
-        {/* Form */}
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Email</label>

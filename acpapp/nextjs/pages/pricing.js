@@ -1,8 +1,81 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { authFetch } from '../lib/api';
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export default function Pricing() {
   const [showQrModal, setShowQrModal] = useState(false);
+  const [status, setStatus] = useState(null); // { tier, role, organization }
+  const [checkout, setCheckout] = useState(null); // { reference, amount, ... }
+  const [message, setMessage] = useState(null); // { type: 'error' | 'success', text }
+  const [loading, setLoading] = useState(false);
+  const [paid, setPaid] = useState(false);
+
+  async function loadStatus() {
+    try {
+      const res = await authFetch('/api/billing/status');
+      if (res.ok) setStatus(await res.json());
+      else setStatus(null);
+    } catch {
+      setStatus(null);
+    }
+  }
+
+  useEffect(() => {
+    loadStatus();
+  }, []);
+
+  async function startCheckout() {
+    setMessage(null);
+    setPaid(false);
+    setLoading(true);
+    try {
+      const res = await authFetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ plan: 'enterprise' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 403) throw new Error('Only organization admins can upgrade the plan.');
+      if (!res.ok) throw new Error(data.detail || 'Could not start checkout.');
+      setCheckout(data);
+      setShowQrModal(true);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function confirmPayment() {
+    setMessage(null);
+    setLoading(true);
+    try {
+      const res = await authFetch('/api/billing/webhook', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ reference: checkout.reference }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Payment confirmation failed.');
+      setPaid(true);
+      setMessage({ type: 'success', text: 'Upgrade complete! Your organization is now on Enterprise.' });
+      await loadStatus();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function closeModal() {
+    setShowQrModal(false);
+    setCheckout(null);
+    setPaid(false);
+  }
+
+  const isEnterprise = status && status.tier === 'enterprise';
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-gray-900 flex flex-col">
@@ -16,7 +89,6 @@ export default function Pricing() {
         </div>
       </header>
 
-      {/* Content Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
         <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-12">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
@@ -25,9 +97,28 @@ export default function Pricing() {
           <p className="text-sm text-gray-500 mt-2">
             Choose a plan to manage campus lost and found operations with institutional verification.
           </p>
+          {status && (
+            <p className="text-xs text-gray-500 mt-3">
+              {status.organization} · current plan:{' '}
+              <span className="font-semibold capitalize">{status.tier}</span> · your role:{' '}
+              <span className="font-semibold">{status.role}</span>
+            </p>
+          )}
         </div>
 
-        {/* Responsive Cards Grid */}
+        {message && (
+          <div
+            role="alert"
+            className={`max-w-4xl mx-auto mb-6 rounded-xl px-4 py-3 text-sm ${
+              message.type === 'error'
+                ? 'bg-red-50 text-red-700 border border-red-200'
+                : 'bg-green-50 text-green-700 border border-green-200'
+            }`}
+          >
+            {message.text}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 max-w-4xl mx-auto">
           {/* Standard Card */}
           <div className="bg-white p-6 sm:p-8 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
@@ -47,8 +138,11 @@ export default function Pricing() {
                 </li>
               </ul>
             </div>
-            <button className="w-full py-3 border border-gray-200 text-gray-800 font-semibold rounded-xl bg-white hover:bg-gray-50 transition text-sm">
-              Current Plan
+            <button
+              disabled
+              className="w-full py-3 border border-gray-200 text-gray-800 font-semibold rounded-xl bg-white text-sm opacity-70 cursor-default"
+            >
+              {isEnterprise ? 'Included' : 'Current Plan'}
             </button>
           </div>
 
@@ -60,7 +154,7 @@ export default function Pricing() {
             <div>
               <h2 className="text-lg font-bold text-gray-900">Enterprise</h2>
               <p className="text-xs sm:text-sm text-gray-500 mb-4">Multi-campus universities</p>
-              <div className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6">Custom</div>
+              <div className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6">฿4,800<span className="text-sm font-medium text-gray-500"> / month</span></div>
               <ul className="space-y-3 text-xs sm:text-sm text-gray-600 mb-8">
                 <li className="flex items-center gap-2">
                   <span className="text-[#E57338] font-bold">✓</span> Unlimited active listings
@@ -73,31 +167,55 @@ export default function Pricing() {
                 </li>
               </ul>
             </div>
-            <button 
-              onClick={() => setShowQrModal(true)}
-              className="w-full py-3.5 bg-[#E57338] hover:bg-[#d66126] text-white font-semibold rounded-xl transition duration-150 shadow-sm text-sm"
+            <button
+              onClick={startCheckout}
+              disabled={loading || isEnterprise}
+              className="w-full py-3.5 bg-[#E57338] hover:bg-[#d66126] disabled:opacity-60 disabled:cursor-default text-white font-semibold rounded-xl transition duration-150 shadow-sm text-sm"
             >
-              Upgrade Now
+              {isEnterprise ? 'Current Plan' : loading ? 'Please wait...' : 'Upgrade Now'}
             </button>
           </div>
         </div>
       </main>
 
       {/* PromptPay Modal */}
-      {showQrModal && (
+      {showQrModal && checkout && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded-2xl w-full max-w-xs sm:max-w-sm text-center shadow-xl">
             <h3 className="text-base font-bold text-gray-900">Scan to Pay</h3>
-            <p className="text-xs text-gray-500 mt-1">PromptPay QR Code Checkout</p>
-            <div className="w-40 h-40 bg-[#F1F3F5] rounded-xl mx-auto my-5 flex items-center justify-center text-xs text-gray-400 font-medium">
-              [QR Code]
+            <p className="text-xs text-gray-500 mt-1">Mock PromptPay QR Checkout</p>
+            <div className="w-40 h-40 bg-[#F1F3F5] rounded-xl mx-auto my-5 flex flex-col items-center justify-center text-xs text-gray-500 font-medium px-2 break-all">
+              <span className="text-2xl mb-1">▦</span>
+              {checkout.reference}
             </div>
-            <p className="text-xs text-gray-400">Waiting for webhook confirmation...</p>
+            <p className="text-sm font-semibold text-gray-900">
+              ฿{Number(checkout.amount).toLocaleString()}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {paid ? 'Payment confirmed.' : 'Waiting for webhook confirmation...'}
+            </p>
+
+            {message && message.type === 'error' && (
+              <p className="text-xs text-red-600 mt-3">{message.text}</p>
+            )}
+            {paid && message && message.type === 'success' && (
+              <p className="text-xs text-green-600 mt-3">{message.text}</p>
+            )}
+
+            {!paid && (
+              <button
+                onClick={confirmPayment}
+                disabled={loading}
+                className="mt-5 w-full py-2.5 bg-[#E57338] hover:bg-[#d66126] disabled:opacity-60 text-white rounded-xl text-xs font-semibold"
+              >
+                {loading ? 'Confirming...' : "I've paid (simulate scan)"}
+              </button>
+            )}
             <button
-              onClick={() => setShowQrModal(false)}
-              className="mt-5 w-full py-2.5 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              onClick={closeModal}
+              className="mt-3 w-full py-2.5 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-50"
             >
-              Cancel
+              {paid ? 'Close' : 'Cancel'}
             </button>
           </div>
         </div>
