@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from database import connect_db, disconnect_db, setup_db
 from routes.auth import router as auth_router
@@ -18,6 +19,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ACP App API", lifespan=lifespan)
+
+# Let the Next.js frontend (port 3000) call this API from the browser.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(auth_router, prefix="/api")
 app.include_router(items_router, prefix="/api")
 app.include_router(products_router, prefix="/api")
