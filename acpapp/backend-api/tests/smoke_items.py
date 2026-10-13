@@ -63,3 +63,26 @@ claimed = check(200, "PATCH", f"/items/{item_id}/claim", token=first)
 assert claimed["status"] == "claimed"
 check(409, "PATCH", f"/items/{item_id}/claim", token=first)
 print("All item smoke checks passed.")
+
+# Week 3: live PostgreSQL checks (creates reports; no table reset).
+extra = check(201, "POST", "/items", {
+    **valid, "item_id": str(uuid4()), "colour": " Black ", "brand": " Acme "
+}, first)
+assert extra["colour"] == "Black" and extra["brand"] == "Acme"
+assert extra["created_at"] and extra["claimed_at"] is None
+extra_path = f'/items/{extra["item_id"]}'
+check(403, "PATCH", extra_path + "/claim", token=second)
+check(403, "DELETE", extra_path, token=second)
+check(422, "PATCH", extra_path, {"organization_id": 999}, first)
+check(422, "PATCH", extra_path, {"status": "claimed"}, first)
+check(422, "PATCH", extra_path, {"name": None}, first)
+check(403, "GET", "/admin/items", token=first)
+filtered = check(200, "GET", "/items?item_type=lost&colour=Black&brand=Acme", token=first)
+assert any(row["item_id"] == extra["item_id"] for row in filtered)
+archived = check(200, "DELETE", extra_path, token=first)
+assert archived["status"] == "archived" and archived["archived_at"]
+check(409, "DELETE", extra_path, token=first)
+check(409, "PATCH", extra_path + "/claim", token=first)
+check(409, "PATCH", extra_path, {"name": "No"}, first)
+assert claimed["claimed_at"] and claimed["claimed_at"] == claimed["updated_at"]
+print("All Week 3 live item smoke checks passed.")

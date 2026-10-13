@@ -95,6 +95,21 @@ async def setup_db():
         )
         """
     )
+    # Additive migration for existing installations; no rows are deleted.
+    async with database.transaction():
+        await database.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS colour VARCHAR(100)")
+        await database.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS brand VARCHAR(100)")
+        await database.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ")
+        await database.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ")
+        await database.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ")
+        # Legacy reports were timestamped when inserted. Legacy closed items
+        # cannot be edited, so updated_at is our best historical event estimate.
+        await database.execute("UPDATE items SET created_at = date_reported WHERE created_at IS NULL")
+        await database.execute("UPDATE items SET claimed_at = updated_at WHERE status = 'claimed' AND claimed_at IS NULL")
+        await database.execute("UPDATE items SET archived_at = updated_at WHERE status = 'archived' AND archived_at IS NULL")
+        await database.execute("ALTER TABLE items ALTER COLUMN created_at SET DEFAULT NOW()")
+        await database.execute("ALTER TABLE items ALTER COLUMN created_at SET NOT NULL")
+
     await database.execute(
         "CREATE INDEX IF NOT EXISTS idx_items_org_status "
         "ON items (organization_id, status)"

@@ -1,69 +1,80 @@
+from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID, uuid4
 
-import jwt
 from asyncpg.exceptions import UniqueViolationError
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, validator
 from sqlalchemy.exc import IntegrityError
 
 from database import database
-from routes.auth import ALGORITHM, SECRET_KEY
+from auth_dependencies import current_user
+from deps import require_role
 
 router = APIRouter(tags=["items"])
-bearer = HTTPBearer(auto_error=False)
+require_admin = require_role("admin")
 
 
-class ItemCreate(BaseModel):
+class ItemInput(BaseModel):
+    class Config:
+        extra = "forbid"
+
+
+class ItemCreate(ItemInput):
     item_id: Optional[UUID] = None
     type: Literal["lost", "found"]
     name: str = Field(min_length=1, max_length=200)
     category: str = Field(min_length=1, max_length=100)
     location: str = Field(min_length=1, max_length=200)
+    colour: Optional[str] = Field(default=None, max_length=100)
+    brand: Optional[str] = Field(default=None, max_length=100)
     description: Optional[str] = None
     photo_url: Optional[str] = None
     contact: Optional[str] = Field(default=None, max_length=255)
 
-    @validator("name", "category", "location", "contact")
+    @validator("name", "category", "location", "contact", "colour", "brand")
     def reject_blank(cls, value):
         if value is not None and not value.strip():
             raise ValueError("must not be blank")
         return value.strip() if value is not None else None
 
 
-class ItemUpdate(BaseModel):
+class ItemUpdate(ItemInput):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     category: Optional[str] = Field(default=None, min_length=1, max_length=100)
     location: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    colour: Optional[str] = Field(default=None, max_length=100)
+    brand: Optional[str] = Field(default=None, max_length=100)
     description: Optional[str] = None
     photo_url: Optional[str] = None
     contact: Optional[str] = Field(default=None, min_length=1, max_length=255)
 
-    @validator("name", "category", "location", "contact")
+    @validator("name", "category", "location", "contact", "colour", "brand")
     def reject_blank(cls, value):
         if value is not None and not value.strip():
             raise ValueError("must not be blank")
         return value.strip() if value is not None else None
 
 
-async def current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)):
-    if credentials is None:
-        raise HTTPException(status_code=401, detail="Login required")
-    try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    if not email:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    user = await database.fetch_one(
-        "SELECT email, organization_id, role, token FROM users WHERE email = :email",
-        {"email": email},
-    )
-    if user is None or user["token"] != credentials.credentials:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    return user
+class ItemResponse(BaseModel):
+    item_id: UUID
+    organization_id: int
+    reported_by: str
+    type: Literal["lost", "found"]
+    name: str
+    category: str
+    location: str
+    colour: Optional[str] = None
+    brand: Optional[str] = None
+    description: Optional[str] = None
+    photo_url: Optional[str] = None
+    contact: str
+    status: Literal["open", "claimed", "archived"]
+    date_reported: datetime
+    created_at: datetime
+    updated_at: datetime
+    claimed_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
 
 
 async def find_item(item_id: UUID, organization_id: int):
@@ -81,7 +92,7 @@ def require_editor(item, user):
         raise HTTPException(status_code=403, detail="Only reporter or admin can edit this item")
 
 
-@router.post("/items", status_code=status.HTTP_201_CREATED)
+@router.post("/items", status_code=status.HTTP_201_CREATED, response_model=ItemResponse)
 async def create_item(payload: ItemCreate, user=Depends(current_user)):
     item_id = payload.item_id or uuid4()
     try:
@@ -89,10 +100,10 @@ async def create_item(payload: ItemCreate, user=Depends(current_user)):
             """
             INSERT INTO items (
                 item_id, organization_id, reported_by, type, name, category,
-                location, description, photo_url, contact
+                location, colour, brand, description, photo_url, contact
             ) VALUES (
                 :item_id, :organization_id, :reported_by, :type, :name, :category,
-                :location, :description, :photo_url, :contact
+                :location, :colour, :brand, :description, :photo_url, :contact
             ) RETURNING *
             """,
             {
@@ -103,6 +114,8 @@ async def create_item(payload: ItemCreate, user=Depends(current_user)):
                 "name": payload.name,
                 "category": payload.category,
                 "location": payload.location,
+                "colour": payload.colour,
+                "brand": payload.brand,
                 "description": payload.description,
                 "photo_url": payload.photo_url,
                 "contact": payload.contact or user["email"],
@@ -113,15 +126,22 @@ async def create_item(payload: ItemCreate, user=Depends(current_user)):
     return dict(row)
 
 
-@router.get("/items")
+@router.get("/items", response_model=list[ItemResponse])
 async def list_items(
     item_status: Optional[Literal["open", "claimed", "archived"]] = None,
+    item_type: Optional[Literal["lost", "found"]] = None,
+    colour: Optional[str] = None,
+    brand: Optional[str] = None,
     category: Optional[str] = None,
     location: Optional[str] = None,
     user=Depends(current_user),
 ):
     query = "SELECT * FROM items WHERE organization_id = :organization_id"
     values = {"organization_id": user["organization_id"]}
+    for column, value in (("type", item_type), ("colour", colour), ("brand", brand)):
+        if value is not None:
+            query += f" AND {column} = :{column}"
+            values[column] = value.strip()
     if item_status is not None:
         query += " AND status = :item_status"
         values["item_status"] = item_status
@@ -136,12 +156,23 @@ async def list_items(
     return [dict(row) for row in rows]
 
 
-@router.get("/items/{item_id}")
+@router.get("/admin/items", response_model=list[ItemResponse])
+async def admin_items(user=Depends(require_admin)):
+    """All statuses in the authenticated admin's organization only."""
+    rows = await database.fetch_all(
+        "SELECT * FROM items WHERE organization_id = :organization_id "
+        "ORDER BY date_reported DESC",
+        {"organization_id": user["organization_id"]},
+    )
+    return [dict(row) for row in rows]
+
+
+@router.get("/items/{item_id}", response_model=ItemResponse)
 async def get_item(item_id: UUID, user=Depends(current_user)):
     return dict(await find_item(item_id, user["organization_id"]))
 
 
-@router.patch("/items/{item_id}")
+@router.patch("/items/{item_id}", response_model=ItemResponse)
 async def update_item(item_id: UUID, payload: ItemUpdate, user=Depends(current_user)):
     item = await find_item(item_id, user["organization_id"])
     require_editor(item, user)
@@ -165,13 +196,13 @@ async def update_item(item_id: UUID, payload: ItemUpdate, user=Depends(current_u
     return dict(row)
 
 
-@router.patch("/items/{item_id}/claim")
+@router.patch("/items/{item_id}/claim", response_model=ItemResponse)
 async def claim_item(item_id: UUID, user=Depends(current_user)):
     item = await find_item(item_id, user["organization_id"])
     require_editor(item, user)
     row = await database.fetch_one(
         """
-        UPDATE items SET status = 'claimed', updated_at = NOW()
+        UPDATE items SET status = 'claimed', claimed_at = NOW(), updated_at = NOW()
         WHERE item_id = :item_id AND organization_id = :organization_id
           AND status = 'open' RETURNING *
         """,
@@ -182,13 +213,13 @@ async def claim_item(item_id: UUID, user=Depends(current_user)):
     return dict(row)
 
 
-@router.delete("/items/{item_id}")
+@router.delete("/items/{item_id}", response_model=ItemResponse)
 async def archive_item(item_id: UUID, user=Depends(current_user)):
     item = await find_item(item_id, user["organization_id"])
     require_editor(item, user)
     row = await database.fetch_one(
         """
-        UPDATE items SET status = 'archived', updated_at = NOW()
+        UPDATE items SET status = 'archived', archived_at = NOW(), updated_at = NOW()
         WHERE item_id = :item_id AND organization_id = :organization_id
           AND status = 'open' RETURNING *
         """,
