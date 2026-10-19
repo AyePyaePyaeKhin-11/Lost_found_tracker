@@ -1,12 +1,105 @@
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { authFetch, getToken, logout } from '../lib/api';
+
 export default function Profile() {
+  const router = useRouter();
+  const [status, setStatus] = useState(null);
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace('/login');
+      return;
+    }
+    setEmail(localStorage.getItem('email') || '');
+    (async () => {
+      try {
+        const res = await authFetch('/api/billing/status');
+        if (!res.ok) throw new Error('Could not load your account.');
+        setStatus(await res.json());
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  async function handleLogout() {
+    try {
+      await authFetch('/api/logout', { method: 'POST' });
+    } catch {}
+    logout();
+    router.push('/login');
+  }
+
   return (
-    <div className="p-8 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">User Profile & Account</h1>
-      <div className="bg-white border rounded-lg p-6 space-y-4">
-        <div><strong>Email:</strong> user@kmitl.ac.th</div>
-        <div><strong>Current Tier:</strong> Free Plan</div>
-        <div><strong>Role:</strong> Student / User</div>
-      </div>
+    <div className="min-h-screen bg-[#F8F9FA] text-gray-900">
+      <header className="bg-white border-b border-gray-200">
+        <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
+          <Link href="/products" className="font-bold text-sm hover:text-[#E57338]">
+            ← Back to items
+          </Link>
+          <span className="text-sm font-semibold text-[#E57338]">My Profile</span>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto px-4 py-8">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          <div className="w-14 h-14 rounded-full bg-[#E57338] text-white flex items-center justify-center text-xl font-bold mb-4">
+            {(email[0] || '?').toUpperCase()}
+          </div>
+
+          {loading && <p className="text-sm text-gray-500">Loading...</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          {status && (
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div>
+                <dt className="text-xs text-gray-500">Email</dt>
+                <dd className="font-semibold break-all">{email}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Role</dt>
+                <dd className="font-semibold capitalize">{status.role}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Organization</dt>
+                <dd className="font-semibold">{status.organization}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Plan</dt>
+                <dd className="font-semibold capitalize">{status.tier}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Listing limit</dt>
+                <dd className="font-semibold">
+                  {status.tier === 'enterprise' ? 'Unlimited' : `${status.seat_limit} / month`}
+                </dd>
+              </div>
+            </dl>
+          )}
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              href="/pricing"
+              className="px-4 py-2.5 bg-[#E57338] hover:bg-[#d66126] text-white rounded-xl text-sm font-semibold"
+            >
+              {status && status.tier === 'enterprise' ? 'View plans' : 'Upgrade plan'}
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              Log out
+            </button>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
