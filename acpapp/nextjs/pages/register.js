@@ -46,10 +46,15 @@ export default function Register() {
       }
 
       const data = await response.json();
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("email", data.email);
-      localStorage.setItem("role", data.role);
-      router.push("/products");
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("email", data.email);
+        localStorage.setItem("role", data.role);
+        router.push("/products");
+      } else {
+        // Email verification is on: no token until the link is opened.
+        setError(data.message);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -63,7 +68,7 @@ export default function Register() {
         <CardHeader>
           <CardTitle>Create an account</CardTitle>
           <CardDescription>
-            Register to start shopping at the ACP Simple Store.
+            Register to report and search lost and found items.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -84,11 +89,12 @@ export default function Register() {
 
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium">
-                Password
+                Password (at least 8 characters)
               </label>
               <Input
                 id="password"
                 type="password"
+                minLength={8}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="new-password"

@@ -35,6 +35,8 @@ services:
       - "8000:8000"
     volumes:
       - ./backend-api:/src
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: temp
       POSTGRES_PASSWORD: temp
