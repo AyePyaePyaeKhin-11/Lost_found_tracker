@@ -1,8 +1,30 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { authFetch, getToken, logout } from '../lib/api';
 
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Who is logged in (read after the page loads; localStorage only exists in the browser).
+  const [user, setUser] = useState(null); // { email, role } or null
+  useEffect(() => {
+    if (getToken()) {
+      setUser({
+        email: localStorage.getItem('email') || '',
+        role: localStorage.getItem('role') || '',
+      });
+    }
+  }, []);
+  const isAdmin = user?.role === 'admin';
+
+  const handleLogout = async () => {
+    try {
+      await authFetch('/api/logout', { method: 'POST' }); // end the session on the server too
+    } catch {}
+    logout();
+    setUser(null);
+    setMobileMenuOpen(false);
+  };
 
   // --- Interactive Draggable Map State ---
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -40,16 +62,39 @@ export default function Home() {
             <Link href="/" className="text-[#E57338] transition">Home</Link>
             <Link href="/products" className="hover:text-[#E57338] transition">Products & Search</Link>
             <Link href="/pricing" className="hover:text-[#E57338] transition">Pricing Plans</Link>
-            <Link href="/admin" className="hover:text-[#E57338] transition">Admin Analytics</Link>
+            {isAdmin && (
+              <Link href="/admin" className="hover:text-[#E57338] transition">Admin Analytics</Link>
+            )}
           </nav>
 
           <div className="flex items-center space-x-3">
-            <Link 
-              href="/login" 
-              className="px-4 py-2 bg-[#E57338] hover:bg-[#d66126] text-white text-xs sm:text-sm font-semibold rounded-xl transition shadow-sm"
-            >
-              KMITL Login
-            </Link>
+            {user ? (
+              <>
+                <Link
+                  href="/profile"
+                  className="flex items-center gap-2 px-3 py-1.5 bg-[#E57338] hover:bg-[#d66126] text-white text-xs sm:text-sm font-semibold rounded-xl transition shadow-sm"
+                  title={user.email}
+                >
+                  <span className="w-6 h-6 rounded-full bg-white text-[#E57338] flex items-center justify-center text-xs font-bold">
+                    {(user.email[0] || '?').toUpperCase()}
+                  </span>
+                  My Profile
+                </Link>
+                <button
+                  onClick={handleLogout}
+                  className="hidden sm:inline-block px-3 py-2 text-xs sm:text-sm font-semibold text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 transition"
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <Link
+                href="/login"
+                className="px-4 py-2 bg-[#E57338] hover:bg-[#d66126] text-white text-xs sm:text-sm font-semibold rounded-xl transition shadow-sm"
+              >
+                Login
+              </Link>
+            )}
 
             <button 
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
@@ -65,7 +110,12 @@ export default function Home() {
             <Link href="/" onClick={() => setMobileMenuOpen(false)} className="block p-2 rounded-lg bg-[#E57338]/10 text-[#E57338]">Home</Link>
             <Link href="/products" onClick={() => setMobileMenuOpen(false)} className="block p-2 rounded-lg text-gray-700 hover:bg-gray-50">Products & Search</Link>
             <Link href="/pricing" onClick={() => setMobileMenuOpen(false)} className="block p-2 rounded-lg text-gray-700 hover:bg-gray-50">Pricing Plans</Link>
-            <Link href="/admin" onClick={() => setMobileMenuOpen(false)} className="block p-2 rounded-lg text-gray-700 hover:bg-gray-50">Admin Analytics</Link>
+            {isAdmin && (
+              <Link href="/admin" onClick={() => setMobileMenuOpen(false)} className="block p-2 rounded-lg text-gray-700 hover:bg-gray-50">Admin Analytics</Link>
+            )}
+            {user && (
+              <button onClick={handleLogout} className="block w-full text-left p-2 rounded-lg text-gray-700 hover:bg-gray-50">Logout</button>
+            )}
           </div>
         )}
       </header>

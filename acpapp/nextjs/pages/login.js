@@ -29,7 +29,7 @@ export default function Login() {
       }
 
       saveSession(data); // stores token, email, role in localStorage
-      router.push(data.role === 'admin' ? '/admin' : '/products');
+      router.push('/'); // everyone starts on the home page after logging in
     } catch (err) {
       setError(err.message);
     } finally {

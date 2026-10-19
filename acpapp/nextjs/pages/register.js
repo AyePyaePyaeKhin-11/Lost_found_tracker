@@ -60,7 +60,7 @@ export default function Register() {
         localStorage.setItem("token", data.token);
         localStorage.setItem("email", data.email);
         localStorage.setItem("role", data.role);
-        router.push("/products");
+        router.push("/");
       } else {
         // Email verification is on: no token until the link is opened.
         setError(data.message);
