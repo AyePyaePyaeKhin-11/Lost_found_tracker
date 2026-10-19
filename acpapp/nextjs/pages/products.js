@@ -211,6 +211,12 @@ export default function Products() {
           <Link href="/" className="font-bold text-lg text-gray-900">← Back to Home</Link>
           <div className="flex items-center gap-4">
             <span className="text-sm font-semibold text-[#E57338]">Products & Items Directory</span>
+            <Link
+              href="/profile"
+              className="text-xs font-bold px-3 py-1.5 rounded-lg border border-[#E57338] text-[#E57338] hover:bg-[#E57338]/10"
+            >
+              My Profile
+            </Link>
             <button
               onClick={handleLogout}
               className="text-xs font-bold px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200"
