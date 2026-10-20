@@ -25,6 +25,7 @@ export default function Products() {
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [reportType, setReportType] = useState('lost'); // type pre-selected in the report form
 
   // --- States for Details Modal ---
   const [selectedItem, setSelectedItem] = useState(null);
@@ -87,6 +88,18 @@ export default function Products() {
     fetchItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Links from the home page: /products?type=lost|found filters the list,
+  // /products?report=lost|found opens the report form with that type chosen.
+  useEffect(() => {
+    if (!router.isReady) return;
+    const { type, report } = router.query;
+    if (type === 'lost' || type === 'found') setFilterType(type);
+    if (report === 'lost' || report === 'found') {
+      setReportType(report);
+      setIsModalOpen(true);
+    }
+  }, [router.isReady, router.query]);
 
   const switchView = (next) => {
     setView(next);
@@ -341,7 +354,7 @@ export default function Products() {
             <div className="text-center py-12 flex flex-col items-center justify-center gap-3">
               <p className="text-gray-400">No items found matching selected filters.</p>
               <button
-                onClick={() => setIsModalOpen(true)}
+                onClick={() => { setReportType('lost'); setIsModalOpen(true); }}
                 className="px-4 py-2 bg-[#E57338] text-white text-xs font-bold rounded-xl hover:opacity-90 transition shadow-sm"
               >
                 Didn't see your item? Add here!
@@ -470,7 +483,7 @@ export default function Products() {
                   Didn't see your item in the matches above?
                 </p>
                 <button
-                  onClick={() => setIsModalOpen(true)}
+                  onClick={() => { setReportType('lost'); setIsModalOpen(true); }}
                   className="px-5 py-2.5 bg-[#E57338] text-white text-xs font-bold rounded-xl hover:opacity-90 transition shadow-sm"
                 >
                   + Add Here!
@@ -488,6 +501,7 @@ export default function Products() {
           if (view === 'matches') fetchGroups();
           else fetchItems(query);
         }}
+        initialType={reportType}
       />
 
       <ItemDetailsModal

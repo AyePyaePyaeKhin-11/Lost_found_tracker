@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-export default function AddItemModal({ isOpen, onClose, onItemAdded }) {
+export default function AddItemModal({ isOpen, onClose, onItemAdded, initialType = 'lost' }) {
   const [formData, setFormData] = useState({
     name: '',
     type: 'lost',
@@ -10,6 +10,11 @@ export default function AddItemModal({ isOpen, onClose, onItemAdded }) {
     contact: '0812345678'
   });
   const [loading, setLoading] = useState(false);
+
+  // Opening the form from "Report Lost" / "Report Found" pre-selects the type.
+  useEffect(() => {
+    if (isOpen) setFormData((f) => ({ ...f, type: initialType === 'found' ? 'found' : 'lost' }));
+  }, [isOpen, initialType]);
 
   if (!isOpen) return null;
 

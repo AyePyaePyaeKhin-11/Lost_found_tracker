@@ -17,6 +17,18 @@ export default function Home() {
   }, []);
   const isAdmin = user?.role === 'admin';
 
+  // Live numbers from the database (GET /api/stats/public). null = still loading.
+  const [stats, setStats] = useState(null);
+  const [statsError, setStatsError] = useState(false);
+  useEffect(() => {
+    const token = getToken();
+    fetch('/api/stats/public', token ? { headers: { Authorization: `Bearer ${token}` } } : {})
+      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then(setStats)
+      .catch(() => setStatsError(true));
+  }, []);
+  const show = (n) => (stats ? n : statsError ? '–' : '…');
+
   const handleLogout = async () => {
     try {
       await authFetch('/api/logout', { method: 'POST' }); // end the session on the server too
@@ -135,13 +147,13 @@ export default function Home() {
           </div>
           <div className="flex w-full md:w-auto gap-3 pt-2 md:pt-0">
             <Link 
-              href="/products" 
+              href="/products?report=lost" 
               className="flex-1 md:flex-initial text-center px-4 sm:px-6 py-3 bg-white text-[#D9534F] font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:bg-gray-50 transition"
             >
               Report Lost
             </Link>
             <Link 
-              href="/products" 
+              href="/products?report=found" 
               className="flex-1 md:flex-initial text-center px-4 sm:px-6 py-3 bg-white text-[#48A868] font-bold text-xs sm:text-sm rounded-xl shadow-xs hover:bg-gray-50 transition"
             >
               Report Found
@@ -156,20 +168,20 @@ export default function Home() {
           <div className="md:col-span-1 space-y-3">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Overview Stats</h3>
             <div className="grid grid-cols-3 md:grid-cols-1 gap-2.5 sm:gap-4">
-              <Link href="/admin" className="block bg-white p-3 sm:p-5 rounded-2xl border-t-4 md:border-t-0 md:border-l-4 border-[#D9534F] border-x border-b border-gray-100 shadow-sm hover:shadow transition">
+              <Link href="/products?type=lost" className="block bg-white p-3 sm:p-5 rounded-2xl border-t-4 md:border-t-0 md:border-l-4 border-[#D9534F] border-x border-b border-gray-100 shadow-sm hover:shadow transition">
                 <span className="text-[11px] sm:text-xs text-gray-400 font-medium">Lost</span>
-                <p className="text-lg sm:text-2xl md:text-3xl font-extrabold text-gray-900 mt-0.5 sm:mt-1">128</p>
+                <p className="text-lg sm:text-2xl md:text-3xl font-extrabold text-gray-900 mt-0.5 sm:mt-1">{show(stats?.lost_open)}</p>
               </Link>
 
-              <Link href="/admin" className="block bg-white p-3 sm:p-5 rounded-2xl border-t-4 md:border-t-0 md:border-l-4 border-[#48A868] border-x border-b border-gray-100 shadow-sm hover:shadow transition">
+              <Link href="/products?type=found" className="block bg-white p-3 sm:p-5 rounded-2xl border-t-4 md:border-t-0 md:border-l-4 border-[#48A868] border-x border-b border-gray-100 shadow-sm hover:shadow transition">
                 <span className="text-[11px] sm:text-xs text-gray-400 font-medium">Found</span>
-                <p className="text-lg sm:text-2xl md:text-3xl font-extrabold text-gray-900 mt-0.5 sm:mt-1">94</p>
+                <p className="text-lg sm:text-2xl md:text-3xl font-extrabold text-gray-900 mt-0.5 sm:mt-1">{show(stats?.found_open)}</p>
               </Link>
 
-              <Link href="/admin" className="block bg-white p-3 sm:p-5 rounded-2xl border-t-4 md:border-t-0 md:border-l-4 border-[#E57338] border-x border-b border-gray-100 shadow-sm hover:shadow transition">
+              <div className="block bg-white p-3 sm:p-5 rounded-2xl border-t-4 md:border-t-0 md:border-l-4 border-[#E57338] border-x border-b border-gray-100 shadow-sm">
                 <span className="text-[11px] sm:text-xs text-gray-400 font-medium">Recovered</span>
-                <p className="text-lg sm:text-2xl md:text-3xl font-extrabold text-gray-900 mt-0.5 sm:mt-1">61</p>
-              </Link>
+                <p className="text-lg sm:text-2xl md:text-3xl font-extrabold text-gray-900 mt-0.5 sm:mt-1">{show(stats?.recovered)}</p>
+              </div>
             </div>
           </div>
 
@@ -180,9 +192,11 @@ export default function Home() {
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Campus Map</h3>
                 <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">🖐 Click & Drag to Move</span>
               </div>
-              <Link href="/admin" className="text-xs text-[#E57338] font-bold hover:underline">
-                Full Analytics →
-              </Link>
+              {isAdmin && (
+                <Link href="/admin" className="text-xs text-[#E57338] font-bold hover:underline">
+                  Full Analytics →
+                </Link>
+              )}
             </div>
 
             {/* Draggable Viewport Area */}
@@ -290,56 +304,61 @@ export default function Home() {
 
         </div>
 
-        {/* Bottom Activity Grid */}
+        {/* Bottom Activity Grid - newest open reports from the database */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
-            <div className="flex justify-between items-center mb-3 sm:mb-4">
-              <h3 className="text-sm sm:text-base font-bold text-gray-900">Recently Found</h3>
-              <Link href="/products" className="text-xs text-[#E57338] font-bold hover:underline">See all</Link>
-            </div>
-            <div className="divide-y divide-gray-100">
-              <Link href="/products" className="py-2.5 sm:py-3 flex items-center justify-between hover:bg-gray-50 px-2 rounded-lg transition">
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-gray-800">Anker 20000mAh Power Bank</p>
-                  <p className="text-[11px] sm:text-xs text-gray-400">Main Library · 20 Sep</p>
-                </div>
-                <span className="text-[10px] sm:text-xs px-2.5 py-0.5 sm:py-1 rounded-full bg-[#EAF5ED] text-[#48A868] font-bold">Found</span>
-              </Link>
-              <Link href="/products" className="py-2.5 sm:py-3 flex items-center justify-between hover:bg-gray-50 px-2 rounded-lg transition">
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-gray-800">Student ID Card (KMITL)</p>
-                  <p className="text-[11px] sm:text-xs text-gray-400">Engineering Building · 18 Sep</p>
-                </div>
-                <span className="text-[10px] sm:text-xs px-2.5 py-0.5 sm:py-1 rounded-full bg-[#EAF5ED] text-[#48A868] font-bold">Found</span>
-              </Link>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
-            <div className="flex justify-between items-center mb-3 sm:mb-4">
-              <h3 className="text-sm sm:text-base font-bold text-gray-900">Recently Lost</h3>
-              <Link href="/products" className="text-xs text-[#E57338] font-bold hover:underline">See all</Link>
-            </div>
-            <div className="divide-y divide-gray-100">
-              <Link href="/products" className="py-2.5 sm:py-3 flex items-center justify-between hover:bg-gray-50 px-2 rounded-lg transition">
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-gray-800">Wired USB-C Earphones</p>
-                  <p className="text-[11px] sm:text-xs text-gray-400">Main Gate · 19 Sep</p>
-                </div>
-                <span className="text-[10px] sm:text-xs px-2.5 py-0.5 sm:py-1 rounded-full bg-[#FDF2F2] text-[#D9534F] font-bold">Lost</span>
-              </Link>
-              <Link href="/products" className="py-2.5 sm:py-3 flex items-center justify-between hover:bg-gray-50 px-2 rounded-lg transition">
-                <div>
-                  <p className="text-xs sm:text-sm font-semibold text-gray-800">Blue Folding Umbrella</p>
-                  <p className="text-[11px] sm:text-xs text-gray-400">Student Cafeteria · 17 Sep</p>
-                </div>
-                <span className="text-[10px] sm:text-xs px-2.5 py-0.5 sm:py-1 rounded-full bg-[#FDF2F2] text-[#D9534F] font-bold">Lost</span>
-              </Link>
-            </div>
-          </div>
+          <RecentList
+            title="Recently Found"
+            type="found"
+            items={stats?.recent_found}
+            loading={!stats && !statsError}
+          />
+          <RecentList
+            title="Recently Lost"
+            type="lost"
+            items={stats?.recent_lost}
+            loading={!stats && !statsError}
+          />
         </div>
-
       </main>
+    </div>
+  );
+}
+
+const BADGE = {
+  found: 'bg-[#EAF5ED] text-[#48A868]',
+  lost: 'bg-[#FDF2F2] text-[#D9534F]',
+};
+
+function shortDate(iso) {
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+function RecentList({ title, type, items, loading }) {
+  return (
+    <div className="bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm">
+      <div className="flex justify-between items-center mb-3 sm:mb-4">
+        <h3 className="text-sm sm:text-base font-bold text-gray-900">{title}</h3>
+        <Link href={`/products?type=${type}`} className="text-xs text-[#E57338] font-bold hover:underline">See all</Link>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {loading && <p className="py-3 px-2 text-xs text-gray-400">Loading…</p>}
+        {!loading && (!items || items.length === 0) && (
+          <p className="py-3 px-2 text-xs text-gray-400">No {type} items reported yet.</p>
+        )}
+        {(items || []).map((item, i) => (
+          <Link
+            key={`${item.name}-${item.date_reported}-${i}`}
+            href={`/products?type=${type}`}
+            className="py-2.5 sm:py-3 flex items-center justify-between hover:bg-gray-50 px-2 rounded-lg transition"
+          >
+            <div>
+              <p className="text-xs sm:text-sm font-semibold text-gray-800">{item.name}</p>
+              <p className="text-[11px] sm:text-xs text-gray-400">{item.location} · {shortDate(item.date_reported)}</p>
+            </div>
+            <span className={`text-[10px] sm:text-xs px-2.5 py-0.5 sm:py-1 rounded-full font-bold capitalize ${BADGE[type]}`}>{type}</span>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }

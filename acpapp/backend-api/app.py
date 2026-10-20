@@ -10,6 +10,7 @@ from routes.products import router as products_router #the router has to be regi
 from routes.billing import router as billing_router, setup_billing_tables
 from routes.analytics import router as analytics_router
 from routes.admin_users import router as admin_users_router
+from routes.stats import router as stats_router
 
 
 @asynccontextmanager
@@ -38,6 +39,7 @@ app.include_router(products_router, prefix="/api")
 app.include_router(billing_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(admin_users_router, prefix="/api")
+app.include_router(stats_router, prefix="/api")
 
 
 @app.get("/")
