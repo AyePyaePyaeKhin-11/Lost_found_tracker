@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { CATEGORIES } from '../lib/categories';
 
 const EMPTY_FORM = {
   name: '',
   type: 'lost',
-  category: 'Electronics',
+  category: '', // chosen from the list (required)
   location: '',
   colour: '',
   brand: '',
@@ -212,14 +213,17 @@ export default function AddItemModal({ isOpen, onClose, onItemAdded, initialType
 
           <div>
             <label style={{ fontSize: '12px', display: 'block', fontWeight: '600' }}>Category</label>
-            <input 
+            <select
               required
-              type="text" 
-              placeholder="e.g. Electronics, Apparel"
               value={formData.category}
               onChange={e => setFormData({...formData, category: e.target.value})}
-              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc' }}
-            />
+              style={{ ...inputStyle, color: formData.category ? '#111' : '#9ca3af' }}
+            >
+              <option value="" disabled>Choose a category…</option>
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value} style={{ color: '#111' }}>{c.label}</option>
+              ))}
+            </select>
           </div>
 
           <div>
