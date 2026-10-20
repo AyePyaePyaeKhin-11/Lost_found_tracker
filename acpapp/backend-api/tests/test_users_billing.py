@@ -146,10 +146,10 @@ def test_analytics_billing_reflects_subscriptions(client, accounts):
     # the demo@example.com account that setup_db always creates
     assert b["pro_users"] == 1
     assert b["free_users"] == 4
-    assert b["mrr"] == 99.0 and b["arr"] == 1188.0
+    assert b["mrr"] == 149.0 and b["arr"] == 1788.0
     assert b["conversion_rate"] == 20.0
     assert b["cancellations_30d"] == 1
-    assert b["paid_transactions"] == 2 and b["transaction_volume"] == 198.0
+    assert b["paid_transactions"] == 2 and b["transaction_volume"] == 298.0
 
 
 # -------------------------------------------------- admin user management

@@ -72,6 +72,7 @@ def test_empty_campus_shows_zeros(client):
 
 def test_counts_and_recent_items(client):
     me = login(client, "stats@kmitl.ac.th")
+    sql("UPDATE users SET role = 'pro' WHERE email = 'stats@kmitl.ac.th'")  # Free allows only 3 lost/month
     for n in ("Lost 1", "Lost 2", "Lost 3", "Lost 4"):
         report(client, me, "lost", n)
     claimed = report(client, me, "found", "Found returned")

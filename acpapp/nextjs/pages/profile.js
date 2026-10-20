@@ -73,12 +73,16 @@ export default function Profile() {
               </div>
               <div>
                 <dt className="text-xs text-gray-500">Plan</dt>
-                <dd className="font-semibold capitalize">{status.tier}</dd>
+                <dd className="font-semibold capitalize">
+                  {status.is_admin ? 'Admin (no subscription)' : status.plan}
+                </dd>
               </div>
               <div>
-                <dt className="text-xs text-gray-500">Listing limit</dt>
+                <dt className="text-xs text-gray-500">Lost reports this month</dt>
                 <dd className="font-semibold">
-                  {status.tier === 'enterprise' ? 'Unlimited' : `${status.seat_limit} / month`}
+                  {status.lost_reports_limit == null
+                    ? `${status.lost_reports_used} (unlimited)`
+                    : `${status.lost_reports_used} of ${status.lost_reports_limit}`}
                 </dd>
               </div>
             </dl>
@@ -86,10 +90,14 @@ export default function Profile() {
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href="/pricing"
+              href={status && status.is_admin ? '/admin' : '/pricing'}
               className="px-4 py-2.5 bg-[#E57338] hover:bg-[#d66126] text-white rounded-xl text-sm font-semibold"
             >
-              {status && status.tier === 'enterprise' ? 'View plans' : 'Upgrade plan'}
+              {status && status.is_admin
+                ? 'Admin dashboard'
+                : status && status.plan === 'pro'
+                  ? 'Manage subscription'
+                  : 'Upgrade to Pro'}
             </Link>
             <button
               onClick={handleLogout}

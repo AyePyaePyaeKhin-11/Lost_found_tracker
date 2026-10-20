@@ -4,9 +4,11 @@ routes/billing.py
 Per-user subscriptions with a mock PromptPay checkout.
 
 Plans live on each user in users.role:
-    free   - default for every new account
-    pro    - paid plan (PRO_PRICE THB / month)
-    admin  - staff account; manages users and subscriptions, never subscribes
+    free   - default for every new account; up to FREE_LOST_REPORTS_PER_MONTH
+             LOST reports per calendar month (found reports are unlimited)
+    pro    - paid plan (PRO_PRICE THB / month); unlimited lost reports
+    admin  - staff account; manages users and subscriptions, never subscribes,
+             never limited
 
 Flow:
     POST /api/billing/checkout   free user creates a pending transaction + QR payload
@@ -32,8 +34,48 @@ from database import database
 router = APIRouter(tags=["billing"])
 
 # Simulated price in THB per user per month.
-PRO_PRICE = 99
+PRO_PRICE = 149
 PLAN_PRICES = {"pro": PRO_PRICE}
+
+# Free plan limit: LOST reports per calendar month (Bangkok time).
+# Found reports are never limited - people handing in items should never be blocked.
+FREE_LOST_REPORTS_PER_MONTH = 3
+LIMIT_TIMEZONE = "Asia/Bangkok"
+
+
+def lost_report_limit(role: str):
+    """Monthly lost-report limit for a role, or None for unlimited."""
+    return FREE_LOST_REPORTS_PER_MONTH if role == "free" else None
+
+
+async def lost_reports_this_month(email: str) -> int:
+    """Lost reports this user CREATED since the 1st of this month. Reports that
+    were later deleted (archived) or returned still count, so deleting a report
+    doesn't give the slot back."""
+    row = await database.fetch_one(
+        """
+        SELECT COUNT(*) AS n FROM items
+        WHERE reported_by = :email AND type = 'lost'
+          AND created_at >= (date_trunc('month', NOW() AT TIME ZONE :tz) AT TIME ZONE :tz)
+        """,
+        {"email": email, "tz": LIMIT_TIMEZONE},
+    )
+    return int(row["n"])
+
+
+async def check_lost_report_quota(user) -> None:
+    """Raise 403 when a Free user has used up this month's lost reports."""
+    limit = lost_report_limit(user["role"])
+    if limit is None:
+        return
+    if await lost_reports_this_month(user["email"]) >= limit:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"You've used your {limit} lost reports for this month. "
+                "Upgrade to Pro for unlimited lost reports. Found reports are always free."
+            ),
+        )
 
 
 async def setup_billing_tables():
@@ -101,6 +143,8 @@ async def billing_status(user=Depends(current_user)):
         "plan": role if role in ("free", "pro") else None,  # admins have no plan
         "is_admin": role == "admin",
         "pro_price": PRO_PRICE,
+        "lost_reports_used": await lost_reports_this_month(user["email"]),
+        "lost_reports_limit": lost_report_limit(role),  # null = unlimited
     }
 
 

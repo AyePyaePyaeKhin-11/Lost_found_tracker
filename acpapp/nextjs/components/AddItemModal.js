@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 export default function AddItemModal({ isOpen, onClose, onItemAdded, initialType = 'lost' }) {
   const [formData, setFormData] = useState({
@@ -6,15 +7,30 @@ export default function AddItemModal({ isOpen, onClose, onItemAdded, initialType
     type: 'lost',
     category: 'Electronics',
     location: '',
-    description: '',
-    contact: '0812345678'
+    description: ''
+    // contact is left out: the backend uses the reporter's email
   });
   const [loading, setLoading] = useState(false);
+  // Free plan: lost reports used / allowed this month. limit null = unlimited (Pro, admin).
+  const [quota, setQuota] = useState(null);
 
   // Opening the form from "Report Lost" / "Report Found" pre-selects the type.
   useEffect(() => {
     if (isOpen) setFormData((f) => ({ ...f, type: initialType === 'found' ? 'found' : 'lost' }));
   }, [isOpen, initialType]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const token = localStorage.getItem('token');
+    fetch('/api/billing/status', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((s) => s && setQuota({ used: s.lost_reports_used, limit: s.lost_reports_limit }))
+      .catch(() => setQuota(null));
+  }, [isOpen]);
+
+  const isLost = formData.type === 'lost';
+  const limited = isLost && quota && quota.limit != null;
+  const usedUp = limited && quota.used >= quota.limit;
 
   if (!isOpen) return null;
 
@@ -70,6 +86,24 @@ export default function AddItemModal({ isOpen, onClose, onItemAdded, initialType
               <option value="found">Found Item (เจอของ)</option>
             </select>
           </div>
+
+          {limited && !usedUp && (
+            <div style={{ fontSize: '12px', padding: '8px 10px', borderRadius: '8px', background: '#FFF4EC', color: '#7a3e1d' }}>
+              Lost reports this month: <b>{quota.used} of {quota.limit}</b> used (Free plan).{' '}
+              <Link href="/pricing" style={{ color: '#E57338', fontWeight: 700 }}>Go unlimited with Pro</Link>
+            </div>
+          )}
+          {usedUp && (
+            <div role="alert" style={{ fontSize: '12px', padding: '10px 12px', borderRadius: '8px', background: '#FDF2F2', color: '#a12a26', border: '1px solid #f3c7c5' }}>
+              <b>You've used all {quota.limit} lost reports for this month.</b> Upgrade to Pro for unlimited lost reports.
+              Found reports are always free.
+              <div style={{ marginTop: '8px' }}>
+                <Link href="/pricing" style={{ display: 'inline-block', padding: '6px 12px', borderRadius: '6px', background: '#E57338', color: '#fff', fontWeight: 700 }}>
+                  Upgrade to Pro
+                </Link>
+              </div>
+            </div>
+          )}
 
           <div>
             <label style={{ fontSize: '12px', display: 'block', fontWeight: '600' }}>Item Name</label>
@@ -128,8 +162,8 @@ export default function AddItemModal({ isOpen, onClose, onItemAdded, initialType
             </button>
             <button 
               type="submit" 
-              disabled={loading}
-              style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#E57338', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}
+              disabled={loading || usedUp}
+              style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: usedUp ? '#d1d5db' : '#E57338', color: '#fff', cursor: usedUp ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}
             >
               {loading ? 'Submitting...' : 'Report Item'}
             </button>

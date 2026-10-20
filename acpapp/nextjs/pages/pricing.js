@@ -12,7 +12,7 @@ import { authFetch, getToken } from '../lib/api';
  */
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
-const DEFAULT_PRO_PRICE = 99;
+const DEFAULT_PRO_PRICE = 149;
 
 function Check({ color }) {
   return <span className={`font-bold ${color}`}>✓</span>;
@@ -207,14 +207,19 @@ export default function Pricing() {
             Find your things faster
           </h1>
           <p className="text-sm text-gray-500 mt-2">
-            Free for every KMITL student. Upgrade to Pro for smart match suggestions.
+            Free for every KMITL student. Upgrade to Pro for unlimited lost reports.
           </p>
           {status && (
             <p className="text-xs text-gray-500 mt-3">
               {status.email} · {isAdmin ? (
                 <span className="font-semibold">admin account</span>
               ) : (
-                <>current plan: <span className="font-semibold capitalize">{plan}</span></>
+                <>
+                  current plan: <span className="font-semibold capitalize">{plan}</span>
+                  {status.lost_reports_limit != null && (
+                    <> · lost reports this month: <span className="font-semibold">{status.lost_reports_used} of {status.lost_reports_limit}</span></>
+                  )}
+                </>
               )}
             </p>
           )}
@@ -250,9 +255,9 @@ export default function Pricing() {
               <p className="text-xs sm:text-sm text-gray-500 mb-4">For every student and staff member</p>
               <div className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6">฿0</div>
               <ul className="space-y-3 text-xs sm:text-sm text-gray-600 mb-8">
-                <li className="flex items-center gap-2"><Check color="text-[#48A868]" /> Report lost and found items</li>
-                <li className="flex items-center gap-2"><Check color="text-[#48A868]" /> Search and filter the campus log</li>
-                <li className="flex items-center gap-2"><Check color="text-[#48A868]" /> Track your own reports</li>
+                <li className="flex items-center gap-2"><Check color="text-[#48A868]" /> <span><b>3 lost reports</b> per month</span></li>
+                <li className="flex items-center gap-2"><Check color="text-[#48A868]" /> Unlimited found reports</li>
+                <li className="flex items-center gap-2"><Check color="text-[#48A868]" /> Search, filter and see matches</li>
               </ul>
             </div>
             {freeButton}
@@ -269,8 +274,9 @@ export default function Pricing() {
                 ฿{price}<span className="text-sm font-medium text-gray-500"> / month</span>
               </div>
               <ul className="space-y-3 text-xs sm:text-sm text-gray-600 mb-8">
+                <li className="flex items-center gap-2"><Check color="text-[#E57338]" /> <span><b>Unlimited lost reports</b></span></li>
+                <li className="flex items-center gap-2"><Check color="text-[#E57338]" /> Unlimited found reports</li>
                 <li className="flex items-center gap-2"><Check color="text-[#E57338]" /> Everything in Free</li>
-                <li className="flex items-center gap-2"><Check color="text-[#E57338]" /> Smart match suggestions with confidence scores</li>
                 <li className="flex items-center gap-2"><Check color="text-[#E57338]" /> Cancel anytime</li>
               </ul>
             </div>

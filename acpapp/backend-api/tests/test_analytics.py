@@ -210,9 +210,9 @@ def test_billing_once_table_exists(client):
         ('a@kmitl.ac.th', 1, 'pro', 199, 'pending', NOW()),
         ('x@other.ac.th', 2, 'pro', 999, 'paid',    NOW())""",))
     b = get(client).json()["billing"]
-    # MRR follows who is on Pro now (b), not past payments: 1 x PRO_PRICE (99).
+    # MRR follows who is on Pro now (b), not past payments: 1 x PRO_PRICE (149).
     # Org 1 non-admins: a (free), b (pro) -> 50% conversion.
-    assert b == {"mrr": 99.0, "arr": 1188.0, "pro_users": 1, "free_users": 1,
+    assert b == {"mrr": 149.0, "arr": 1788.0, "pro_users": 1, "free_users": 1,
                  "conversion_rate": 50.0, "cancellations_30d": 0,
                  "paid_transactions": 2, "transaction_volume": 398.0}
 

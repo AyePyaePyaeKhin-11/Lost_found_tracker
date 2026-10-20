@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from database import database
 from auth_dependencies import current_user
 from deps import require_role
+from routes.billing import check_lost_report_quota
 
 router = APIRouter(tags=["items"])
 require_admin = require_role("admin")
@@ -94,6 +95,8 @@ def require_editor(item, user):
 
 @router.post("/items", status_code=status.HTTP_201_CREATED, response_model=ItemResponse)
 async def create_item(payload: ItemCreate, user=Depends(current_user)):
+    if payload.type == "lost":
+        await check_lost_report_quota(user)  # Free plan: 3 lost reports / month
     item_id = payload.item_id or uuid4()
     try:
         row = await database.fetch_one(
