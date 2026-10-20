@@ -373,6 +373,14 @@ export default function Products() {
                     className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition flex flex-col justify-between min-h-[11rem]"
                   >
                     <div>
+                      {item.photo_url && (
+                        <img
+                          src={item.photo_url}
+                          alt={item.name || 'Item photo'}
+                          loading="lazy"
+                          className="w-full h-36 object-cover rounded-xl mb-3 bg-gray-100"
+                        />
+                      )}
                       <div className="flex justify-between items-start mb-2 gap-2">
                         <h3 className="font-bold text-gray-900 text-base line-clamp-1">
                           {item.name || item.title}

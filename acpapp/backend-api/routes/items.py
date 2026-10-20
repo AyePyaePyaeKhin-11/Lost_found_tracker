@@ -11,6 +11,7 @@ from database import database
 from auth_dependencies import current_user
 from deps import require_role
 from routes.billing import check_lost_report_quota
+from routes.uploads import PHOTO_URL_PATTERN
 
 router = APIRouter(tags=["items"])
 require_admin = require_role("admin")
@@ -39,6 +40,13 @@ class ItemCreate(ItemInput):
             raise ValueError("must not be blank")
         return value.strip() if value is not None else None
 
+    @validator("photo_url")
+    def only_uploaded_photos(cls, value):
+        # Photos must come from POST /api/uploads (no links to other websites).
+        if value is not None and not PHOTO_URL_PATTERN.match(value):
+            raise ValueError("must be a photo uploaded with /api/uploads")
+        return value
+
 
 class ItemUpdate(ItemInput):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
@@ -55,6 +63,13 @@ class ItemUpdate(ItemInput):
         if value is not None and not value.strip():
             raise ValueError("must not be blank")
         return value.strip() if value is not None else None
+
+    @validator("photo_url")
+    def only_uploaded_photos(cls, value):
+        # Photos must come from POST /api/uploads (no links to other websites).
+        if value is not None and not PHOTO_URL_PATTERN.match(value):
+            raise ValueError("must be a photo uploaded with /api/uploads")
+        return value
 
 
 class ItemResponse(BaseModel):

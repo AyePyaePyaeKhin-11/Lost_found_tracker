@@ -40,6 +40,9 @@ services:
       POSTGRES_HOST: db
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-kmitl.ac.th}
+      UPLOAD_DIR: /src/uploads
+    volumes:
+      - uploads_data:/src/uploads   # report photos, kept across redeploys
     command: uvicorn app:app --host 0.0.0.0 --port 8000
     depends_on:
       db:
@@ -56,3 +59,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:

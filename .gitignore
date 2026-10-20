@@ -143,3 +143,6 @@ vite.config.ts.timestamp-*
 .vite/
 
 acpapp/backend-api/.venv/
+
+# report photos uploaded while running locally
+acpapp/backend-api/uploads/
