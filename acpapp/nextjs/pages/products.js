@@ -24,6 +24,7 @@ export default function Products() {
   const [loading, setLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState(''); // success message after mark returned / delete
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [reportType, setReportType] = useState('lost'); // type pre-selected in the report form
 
@@ -345,6 +346,12 @@ export default function Products() {
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-red-50 text-sm text-red-700">{error}</div>
         )}
+        {notice && (
+          <div className="mb-4 p-3 rounded-xl bg-green-50 text-sm text-green-700 flex justify-between items-center">
+            <span>{notice}</span>
+            <button onClick={() => setNotice('')} className="text-green-700 font-bold ml-3">✕</button>
+          </div>
+        )}
 
         {/* ---------- All items / search results ---------- */}
         {view === 'items' && (
@@ -516,6 +523,11 @@ export default function Products() {
         isOpen={isDetailsOpen}
         onClose={() => setIsDetailsOpen(false)}
         item={selectedItem}
+        onChanged={(text) => {
+          setNotice(text);
+          if (view === 'matches') fetchGroups();
+          else fetchItems(query);
+        }}
       />
     </div>
   );
